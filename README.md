@@ -24,3 +24,13 @@ Hvis noget driller
 - Stop Expo (`Ctrl + C`) og kør `npx expo start --clear` for at rydde cache.
 - Tjek at `.env` faktisk ligger i projektmappen og indeholder alle værdierne fra rapporten.
 - Sørg for at telefon og computer er på samme Wi-Fi, hvis du tester på fysisk enhed.
+
+
+
+Ansvarsfordeling og udviklingsbidrag
+------------------
+Projektgruppen har samarbejdet tæt om udviklingen af applikationen og dens funktionalitet.
+Frederik og Oliver har haft hovedansvaret for opsætningen og konfigurationen af Firebase, herunder databaseforbindelser og dataintegration.
+Anders og August har været ansvarlige for udviklingen af login-funktionaliteten og sikret, at denne fungerer gnidningsfrit i samspil med Firebase.
+
+Sammen har hele gruppen bidraget til at udvikle appens overordnede funktionalitet og design. Alle medlemmer har arbejdet på forskellige sider og features, samt i fællesskab stået for opsætningen og implementeringen af AI-løsningen i applikationen.
