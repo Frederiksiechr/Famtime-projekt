@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "FamTime",
+    "slug": "famtime",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#ffffff"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "jsEngine": "hermes",
+    "platforms": ["ios", "android"],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "package": "com.famtime.app"
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    }
+  }
+}

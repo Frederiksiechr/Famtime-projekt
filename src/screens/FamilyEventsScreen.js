@@ -1,0 +1,2122 @@
+/**
+ * FamilyEventsScreen
+ *
+ * - Viser familiens kommende begivenheder opdelt i godkendte og afventende.
+ * - Administratorer kan godkende afventende begivenheder direkte fra listen.
+ */
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  ScrollView,
+  Modal,
+  Pressable,
+  TextInput,
+  Alert,
+  Platform,
+  KeyboardAvoidingView,
+  SafeAreaView,
+} from 'react-native';
+import * as Calendar from 'expo-calendar';
+
+import Button from '../components/Button';
+import ErrorMessage from '../components/ErrorMessage';
+import AISuggestion, {
+  MOOD_OPTIONS,
+  generateProfileSuggestion,
+} from '../components/AISuggestion';
+import { auth, db, firebase } from '../lib/firebase';
+import { colors, spacing, fontSizes, radius } from '../styles/theme';
+import DateTimePicker from '@react-native-community/datetimepicker';
+import { Ionicons } from '@expo/vector-icons';
+
+const DEFAULT_EVENT_DURATION_MINUTES = 60;
+const MIN_EVENT_DURATION_MINUTES = 15;
+const SUGGESTION_LOOKAHEAD_DAYS = 7;
+const SUGGESTION_LIMIT = 6;
+const SUGGESTION_HOURS = [9, 12, 15, 18];
+const MIN_SUGGESTION_OFFSET_MINUTES = 60;
+const isIOS = Platform.OS === 'ios';
+
+const WEEK_DAYS = [
+  { key: 'monday', label: 'Mandag' },
+  { key: 'tuesday', label: 'Tirsdag' },
+  { key: 'wednesday', label: 'Onsdag' },
+  { key: 'thursday', label: 'Torsdag' },
+  { key: 'friday', label: 'Fredag' },
+  { key: 'saturday', label: 'Lørdag' },
+  { key: 'sunday', label: 'Søndag' },
+];
+const isSameDay = (a, b) => {
+  if (!(a instanceof Date) || !(b instanceof Date)) {
+    return false;
+  }
+
+  return (
+    a.getFullYear() === b.getFullYear() &&
+    a.getMonth() === b.getMonth() &&
+    a.getDate() === b.getDate()
+  );
+};
+
+const formatDateBadge = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return 'Ukendt dato';
+  }
+
+  return date
+    .toLocaleDateString('da-DK', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+    })
+    .replace('.', '');
+};
+
+const formatTimeRange = (start, end) => {
+  if (!(start instanceof Date) || Number.isNaN(start.getTime())) {
+    return 'Ukendt tidspunkt';
+  }
+
+  const startLabel = start.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  if (!(end instanceof Date) || Number.isNaN(end.getTime())) {
+    return startLabel;
+  }
+
+  const endLabel = end.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  if (isSameDay(start, end)) {
+    return `${startLabel} - ${endLabel}`;
+  }
+
+  const endDateLabel = end.toLocaleDateString('da-DK', {
+    weekday: 'short',
+    day: 'numeric',
+    month: 'short',
+  });
+
+  return `${startLabel} -> ${endDateLabel.replace('.', '')} ${endLabel}`;
+};
+
+const getDurationLabel = (start, end) => {
+  if (!(start instanceof Date) || !(end instanceof Date)) {
+    return '';
+  }
+
+  const diffMinutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000));
+  if (!diffMinutes) {
+    return '';
+  }
+
+  if (diffMinutes % 60 === 0) {
+    const hours = diffMinutes / 60;
+    return hours === 1 ? '1 time' : `${hours} timer`;
+  }
+
+  if (diffMinutes > 90) {
+    const hours = diffMinutes / 60;
+    return `${hours.toFixed(1)} timer`;
+  }
+
+  return `${diffMinutes} min`;
+};
+
+const createDefaultEventState = () => {
+  const start = new Date();
+  start.setSeconds(0, 0);
+  const end = new Date(start.getTime() + DEFAULT_EVENT_DURATION_MINUTES * 60000);
+
+  return {
+    title: '',
+    description: '',
+    start,
+    end,
+  };
+};
+
+const formatDateTime = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return 'Ukendt tidspunkt';
+  }
+
+  return `${date.toLocaleDateString()} kl. ${date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  })}`;
+};
+
+const FamilyEventsScreen = () => {
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [infoMessage, setInfoMessage] = useState('');
+  const [familyId, setFamilyId] = useState(null);
+  const [familyName, setFamilyName] = useState('');
+  const [confirmedEvents, setConfirmedEvents] = useState([]);
+  const [pendingEvents, setPendingEvents] = useState([]);
+  const [actionStatus, setActionStatus] = useState('');
+  const [formVisible, setFormVisible] = useState(false);
+  const [formData, setFormData] = useState(createDefaultEventState);
+  const [formError, setFormError] = useState('');
+  const [formSaving, setFormSaving] = useState(false);
+  const [showStartPicker, setShowStartPicker] = useState(isIOS);
+  const [showEndPicker, setShowEndPicker] = useState(isIOS);
+  const [suggestions, setSuggestions] = useState([]);
+  const [selectedSuggestionId, setSelectedSuggestionId] = useState(null);
+  const [activeSlotId, setActiveSlotId] = useState(null);
+  const [calendarContext, setCalendarContext] = useState({
+    ready: false,
+    docRef: null,
+    primaryCalendarId: null,
+    calendarIds: [],
+  });
+  const [familyMembers, setFamilyMembers] = useState([]);
+  const [familyPreferences, setFamilyPreferences] = useState({});
+  const [eventsLoaded, setEventsLoaded] = useState(false);
+  const familyCalendarRefsRef = useRef({});
+  const familySyncLockRef = useRef(false);
+  const currentUserId = auth.currentUser?.uid ?? null;
+  const currentUserEmail = auth.currentUser?.email?.toLowerCase() ?? '';
+  const [currentUserProfile, setCurrentUserProfile] = useState(null);
+  const [activeMoodKey, setActiveMoodKey] = useState(null);
+  const [moodDraftTitle, setMoodDraftTitle] = useState('');
+  const [moodDraftDescription, setMoodDraftDescription] = useState('');
+  const [moodPreview, setMoodPreview] = useState(null);
+  const shouldShowStatusCard =
+    Boolean(error) || Boolean(actionStatus) || Boolean(infoMessage) || loading;
+
+  const sortedSuggestions = useMemo(() => {
+    if (!Array.isArray(suggestions) || !suggestions.length) {
+      return [];
+    }
+
+    const toTime = (date) => {
+      if (date instanceof Date && !Number.isNaN(date.getTime())) {
+        return date.getTime();
+      }
+      return Number.MAX_SAFE_INTEGER;
+    };
+
+    return [...suggestions].sort(
+      (a, b) => toTime(a?.start) - toTime(b?.start)
+    );
+  }, [suggestions]);
+
+  useEffect(() => {
+    if (!sortedSuggestions.length) {
+      setActiveSlotId(null);
+      return;
+    }
+
+    setActiveSlotId((prev) => {
+      if (prev && sortedSuggestions.some((item) => item.id === prev)) {
+        return prev;
+      }
+      return sortedSuggestions[0].id;
+    });
+  }, [sortedSuggestions]);
+
+  const activeSuggestion = useMemo(() => {
+    if (!sortedSuggestions.length) {
+      return null;
+    }
+
+    if (activeSlotId) {
+      return sortedSuggestions.find((item) => item.id === activeSlotId) ?? sortedSuggestions[0];
+    }
+
+    return sortedSuggestions[0];
+  }, [sortedSuggestions, activeSlotId]);
+
+  const activeDurationLabel = useMemo(() => {
+    if (!activeSuggestion) {
+      return '';
+    }
+    return getDurationLabel(activeSuggestion.start, activeSuggestion.end);
+  }, [activeSuggestion]);
+
+  const activeTimeText = useMemo(() => {
+    if (!activeSuggestion) {
+      return '';
+    }
+    return formatTimeRange(activeSuggestion.start, activeSuggestion.end);
+  }, [activeSuggestion]);
+
+  const suggestionMetaText = useMemo(() => {
+    if (!sortedSuggestions.length) {
+      return 'Ingen ledige datoer fundet endnu.';
+    }
+    if (!activeSuggestion) {
+      return 'Vaelg en dato for at se detaljer.';
+    }
+    const index = sortedSuggestions.findIndex((item) => item.id === activeSuggestion.id);
+    return `Forslag ${index + 1} af ${sortedSuggestions.length}`;
+  }, [sortedSuggestions, activeSuggestion]);
+
+  const moodCards = useMemo(() => {
+    const baseCards = MOOD_OPTIONS.map((option) => {
+      const summary =
+        currentUserProfile && Object.keys(currentUserProfile).length
+          ? generateProfileSuggestion(currentUserProfile, option.key)
+          : option.helper;
+
+      return {
+        ...option,
+        summary,
+      };
+    });
+
+    return [
+      ...baseCards,
+      {
+        key: 'custom',
+        label: 'Vaelg selv',
+        helper: 'Tilpas titel og beskrivelse selv.',
+        description: 'Start fra bunden og skriv jeres egen ide.',
+        summary: '',
+      },
+    ];
+  }, [currentUserProfile]);
+
+  const ensureValidEnd = (start, end) => {
+    if (!end || end <= start) {
+      return new Date(start.getTime() + MIN_EVENT_DURATION_MINUTES * 60000);
+    }
+    return end;
+  };
+
+  const resetFormState = (overrides = {}) => {
+    const defaults = createDefaultEventState();
+    setFormData({ ...defaults, ...overrides });
+    setFormError('');
+    setFormSaving(false);
+    setShowStartPicker(isIOS);
+    setShowEndPicker(isIOS);
+    setSelectedSuggestionId(null);
+  };
+
+  useEffect(() => {
+    let isActive = true;
+
+    const fetchPreferences = async () => {
+      const memberIds = familyMembers
+        .map((member) => member?.userId)
+        .filter((id) => typeof id === 'string' && id.trim().length > 0);
+
+      if (!memberIds.length) {
+        if (isActive) {
+          setFamilyPreferences({});
+        }
+        return;
+      }
+
+      try {
+        const snapshots = await Promise.all(
+          memberIds.map((id) =>
+            db
+              .collection('users')
+              .doc(id)
+              .get()
+              .catch(() => null)
+          )
+        );
+
+        const nextPreferences = {};
+        snapshots.forEach((docSnapshot, index) => {
+          if (docSnapshot && docSnapshot.exists) {
+            const data = docSnapshot.data() ?? {};
+            nextPreferences[memberIds[index]] = {
+              frequency:
+                typeof data.preferredFamilyFrequency === 'number'
+                  ? data.preferredFamilyFrequency
+                  : null,
+              days: Array.isArray(data.preferredFamilyDays)
+                ? data.preferredFamilyDays
+                : [],
+            };
+          }
+        });
+
+        if (isActive) {
+          setFamilyPreferences(nextPreferences);
+        }
+      } catch (_error) {
+        if (isActive) {
+          setFamilyPreferences({});
+        }
+      }
+    };
+
+    fetchPreferences();
+
+    return () => {
+      isActive = false;
+    };
+  }, [familyMembers]);
+
+  const handleOpenCreateForm = (suggestion = null, overrides = {}) => {
+  if (!familyId) {
+    Alert.alert(
+      'Ingen familie',
+      'Du skal vaere tilknyttet en familie for at oprette begivenheder.'
+    );
+    return;
+  }
+
+  const suggestionOverrides = suggestion
+    ? {
+        start:
+          suggestion.start instanceof Date
+            ? new Date(suggestion.start)
+            : suggestion.start,
+        end:
+          suggestion.end instanceof Date
+            ? new Date(suggestion.end)
+            : suggestion.end,
+      }
+    : {};
+
+  resetFormState({ ...suggestionOverrides, ...overrides });
+  if (suggestion) {
+    setSelectedSuggestionId(suggestion.id);
+    setActiveSlotId(suggestion.id);
+  }
+  setFormVisible(true);
+};
+
+  const handleCloseForm = () => {
+    setFormVisible(false);
+    resetFormState();
+  };
+
+  const handleChangeFormField = (field, value) => {
+    setFormData((prev) => ({
+      ...prev,
+      [field]: value,
+    }));
+  };
+
+  const handleStartDateChange = (_event, selectedDate) => {
+    if (selectedDate) {
+      const rounded = new Date(selectedDate);
+      rounded.setSeconds(0, 0);
+      setFormData((prev) => ({
+        ...prev,
+        start: rounded,
+        end: ensureValidEnd(rounded, prev.end),
+      }));
+      setSelectedSuggestionId(null);
+    }
+
+    if (!isIOS) {
+      setShowStartPicker(false);
+    }
+  };
+
+  const handleEndDateChange = (_event, selectedDate) => {
+    if (selectedDate) {
+      const rounded = new Date(selectedDate);
+      rounded.setSeconds(0, 0);
+      setFormData((prev) => ({
+        ...prev,
+        end: ensureValidEnd(prev.start, rounded),
+      }));
+      setSelectedSuggestionId(null);
+    }
+
+    if (!isIOS) {
+      setShowEndPicker(false);
+    }
+  };
+
+  const handleBackdropPress = () => {
+    if (!formSaving) {
+      handleCloseForm();
+    }
+  };
+
+  const handleModalCardPress = (event) => {
+    event?.stopPropagation?.();
+  };
+
+  const buildSuggestions = useCallback(() => {
+    const ranges = [];
+    const collectRange = (start, end) => {
+      if (start instanceof Date && end instanceof Date) {
+        ranges.push({ start, end });
+      }
+    };
+
+    [...confirmedEvents, ...pendingEvents].forEach((event) => {
+      collectRange(event.start, event.end);
+      if (event.pendingChange) {
+        collectRange(event.pendingChange.start, event.pendingChange.end);
+      }
+    });
+
+    const preferenceEntries = Object.values(familyPreferences);
+    const dayCounts = new Map(
+      WEEK_DAYS.map(({ key }) => [key, 0])
+    );
+    let frequencyTotal = 0;
+    let frequencyCount = 0;
+
+    preferenceEntries.forEach((entry) => {
+      if (Array.isArray(entry?.days)) {
+        entry.days.forEach((day) => {
+          if (dayCounts.has(day)) {
+            dayCounts.set(day, (dayCounts.get(day) ?? 0) + 1);
+          }
+        });
+      }
+      if (typeof entry?.frequency === 'number' && entry.frequency > 0) {
+        frequencyTotal += entry.frequency;
+        frequencyCount += 1;
+      }
+    });
+
+    const defaultDayOrder = WEEK_DAYS.map(({ key }) => key);
+    let preferredDayOrder = defaultDayOrder;
+    const rankedDays = WEEK_DAYS.slice().sort((a, b) => {
+      const aCount = dayCounts.get(a.key) ?? 0;
+      const bCount = dayCounts.get(b.key) ?? 0;
+      if (bCount === aCount) {
+        return defaultDayOrder.indexOf(a.key) - defaultDayOrder.indexOf(b.key);
+      }
+      return bCount - aCount;
+    });
+    const filteredRankedDays = rankedDays.filter(
+      ({ key }) => (dayCounts.get(key) ?? 0) > 0
+    );
+    if (filteredRankedDays.length) {
+      preferredDayOrder = filteredRankedDays.map(({ key }) => key);
+    }
+
+    const averageFrequency = frequencyCount
+      ? Math.max(1, Math.round(frequencyTotal / frequencyCount))
+      : 2;
+    const targetSuggestionCount = Math.min(
+      SUGGESTION_LIMIT,
+      Math.max(averageFrequency, 1) * 2
+    );
+
+    const earliest = new Date(Date.now() + MIN_SUGGESTION_OFFSET_MINUTES * 60000);
+
+    const dayKeyByIndex = [
+      'sunday',
+      'monday',
+      'tuesday',
+      'wednesday',
+      'thursday',
+      'friday',
+      'saturday',
+    ];
+
+    const generateSuggestions = (allowedDays, limit) => {
+      const results = [];
+      const allowedSet = new Set(allowedDays);
+
+      for (let dayOffset = 0; dayOffset < Math.max(SUGGESTION_LOOKAHEAD_DAYS, 14); dayOffset += 1) {
+        if (results.length >= limit) {
+          break;
+        }
+
+        const dateBase = new Date();
+        dateBase.setHours(0, 0, 0, 0);
+        dateBase.setDate(dateBase.getDate() + dayOffset);
+
+        const weekdayKey = dayKeyByIndex[dateBase.getDay()];
+        if (!allowedSet.has(weekdayKey)) {
+          continue;
+        }
+
+        for (const hour of SUGGESTION_HOURS) {
+          if (results.length >= limit) {
+            break;
+          }
+
+          const slotStart = new Date(dateBase);
+          slotStart.setHours(hour, 0, 0, 0);
+
+          if (slotStart <= earliest) {
+            continue;
+          }
+
+          const slotEnd = new Date(
+            slotStart.getTime() + DEFAULT_EVENT_DURATION_MINUTES * 60000
+          );
+
+          const overlaps = ranges.some((range) => {
+            if (!(range.start instanceof Date) || !(range.end instanceof Date)) {
+              return false;
+            }
+
+            return range.start < slotEnd && range.end > slotStart;
+          });
+
+          if (!overlaps) {
+            results.push({
+              id: slotStart.toISOString(),
+              start: slotStart,
+              end: slotEnd,
+            });
+          }
+        }
+      }
+
+      return results;
+    };
+
+    let suggestionsList = generateSuggestions(preferredDayOrder, targetSuggestionCount);
+
+    if (!suggestionsList.length) {
+      suggestionsList = generateSuggestions(defaultDayOrder, SUGGESTION_LIMIT);
+    }
+
+    const nextSuggestions = suggestionsList.slice(0, SUGGESTION_LIMIT);
+    setSuggestions(nextSuggestions);
+    setSelectedSuggestionId(null);
+    setActiveSlotId(nextSuggestions.length ? nextSuggestions[0].id : null);
+  }, [confirmedEvents, pendingEvents, familyPreferences]);
+
+  useEffect(() => {
+    buildSuggestions();
+  }, [buildSuggestions]);
+
+  const handleSelectSuggestion = (suggestion) => {
+    setSelectedSuggestionId(suggestion.id);
+    setActiveSlotId(suggestion.id);
+    setFormData((prev) => ({
+      ...prev,
+      start: suggestion.start,
+      end: suggestion.end,
+    }));
+    setShowStartPicker(isIOS);
+    setShowEndPicker(isIOS);
+  };
+
+
+  const handleSelectMoodCard = useCallback(
+    (mood) => {
+      if (!mood) {
+        return;
+      }
+
+      if (activeMoodKey === mood.key) {
+        return;
+      }
+
+      const defaultTitle =
+        mood.key === 'custom' ? '' : `Familietid - ${mood.label}`;
+      const defaultDescription =
+        mood.key === 'custom'
+          ? ''
+          : mood.summary || mood.description || '';
+
+      setActiveMoodKey(mood.key);
+      setMoodDraftTitle(defaultTitle);
+      setMoodDraftDescription(defaultDescription);
+    },
+    [activeMoodKey]
+  );
+
+  const handleChangeMoodTitle = useCallback((text) => {
+    setMoodDraftTitle(text);
+  }, []);
+
+  const handleChangeMoodDescription = useCallback((text) => {
+    setMoodDraftDescription(text);
+  }, []);
+
+  const handleApplyAISuggestion = useCallback((text) => {
+    const nextText = typeof text === 'string' ? text : '';
+    setMoodDraftDescription(nextText);
+  }, []);
+
+  const handlePlanFromMood = useCallback(async () => {
+    if (!activeSuggestion) {
+      Alert.alert('Vælg dato', 'Vælg først en af de ledige datoer.');
+      return;
+    }
+
+    const trimmedTitle = moodDraftTitle.trim();
+    if (!trimmedTitle) {
+      Alert.alert('Manglende titel', 'Tilføj en titel til begivenheden.');
+      return;
+    }
+
+    const baseStart =
+      activeSuggestion.start instanceof Date
+        ? new Date(activeSuggestion.start)
+        : new Date(activeSuggestion.start ?? Date.now());
+    const baseEnd =
+      activeSuggestion.end instanceof Date
+        ? new Date(activeSuggestion.end)
+        : new Date(baseStart.getTime() + DEFAULT_EVENT_DURATION_MINUTES * 60000);
+
+    const eventState = {
+      title: trimmedTitle,
+      description: moodDraftDescription.trim(),
+      start: baseStart,
+      end: baseEnd,
+    };
+
+    setFormData(eventState);
+    setSelectedSuggestionId(activeSuggestion.id);
+
+    const success = await handleSubmitEvent(eventState);
+
+    if (success) {
+      setActiveMoodKey(null);
+      setMoodDraftTitle('');
+      setMoodDraftDescription('');
+    }
+  }, [
+    activeSuggestion,
+    moodDraftTitle,
+    moodDraftDescription,
+    handleSubmitEvent,
+  ]);
+
+  const handleCloseMoodPreview = useCallback(() => {
+    setMoodPreview(null);
+  }, []);
+const initializeCalendarContext = useCallback(
+    async (userId) => {
+      if (!userId) {
+        setCalendarContext({
+          ready: false,
+          docRef: null,
+          primaryCalendarId: null,
+          calendarIds: [],
+        });
+        familyCalendarRefsRef.current = {};
+        return;
+      }
+
+      try {
+        const permissions = await Calendar.getCalendarPermissionsAsync();
+        if (permissions.status !== 'granted') {
+          setCalendarContext({
+            ready: false,
+            docRef: null,
+            primaryCalendarId: null,
+            calendarIds: [],
+          });
+          familyCalendarRefsRef.current = {};
+          return;
+        }
+
+        const calendarRef = db.collection('calendar').doc(userId);
+        const calendarDoc = await calendarRef.get();
+        const calendarData = calendarDoc.data() ?? {};
+
+        if (!calendarDoc.exists || !calendarData.synced) {
+          setCalendarContext({
+            ready: false,
+            docRef: calendarRef,
+            primaryCalendarId: null,
+            calendarIds: [],
+          });
+          familyCalendarRefsRef.current = {};
+          return;
+        }
+
+        const calendarIdsSet = new Set();
+        const appendIds = (values) => {
+          (values ?? []).forEach((value) => {
+            if (typeof value === 'string' && value.trim().length > 0) {
+              calendarIdsSet.add(value);
+            }
+          });
+        };
+
+        if (Array.isArray(calendarData.calendarIds)) {
+          appendIds(calendarData.calendarIds);
+        }
+
+        if (calendarData.calendarId) {
+          appendIds([calendarData.calendarId]);
+        }
+
+        if (!calendarIdsSet.size) {
+          const deviceCalendars = await Calendar.getCalendarsAsync(
+            Calendar.EntityTypes.EVENT
+          );
+          appendIds(deviceCalendars.map((calendar) => calendar?.id).filter(Boolean));
+        }
+
+        const calendarIds = Array.from(calendarIdsSet);
+        const primaryCalendarId = calendarIds.includes(calendarData.calendarId)
+          ? calendarData.calendarId
+          : calendarIds[0] ?? null;
+
+        familyCalendarRefsRef.current =
+          calendarData.familyEventRefs && typeof calendarData.familyEventRefs === 'object'
+            ? calendarData.familyEventRefs
+            : {};
+
+        setCalendarContext({
+          ready: Boolean(primaryCalendarId),
+          docRef: calendarRef,
+          primaryCalendarId,
+          calendarIds,
+        });
+
+        const shouldPersistIds = Boolean(
+          calendarIds.length &&
+            (!Array.isArray(calendarData.calendarIds) ||
+              calendarData.calendarIds.length !== calendarIds.length ||
+              calendarData.calendarIds.some((id) => !calendarIdsSet.has(id)) ||
+              calendarData.calendarId !== primaryCalendarId)
+        );
+
+        if (shouldPersistIds) {
+          await calendarRef.set(
+            {
+              calendarIds,
+              calendarId: primaryCalendarId,
+              updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+        }
+      } catch (calendarError) {
+        console.warn('[FamilyEvents] initializeCalendarContext', calendarError);
+        setCalendarContext({
+          ready: false,
+          docRef: null,
+          primaryCalendarId: null,
+          calendarIds: [],
+        });
+        familyCalendarRefsRef.current = {};
+      }
+    },
+    []
+  );
+
+  const handleSubmitEvent = async (eventState = null) => {
+    const data = eventState ?? formData ?? {};
+
+    if (!familyId) {
+      setFormError('Ingen familie valgt. Tilslut dig en familie og prøv igen.');
+      return false;
+    }
+
+    const trimmedTitle = (data.title ?? '').trim();
+    if (!trimmedTitle.length) {
+      setFormError('Tilføj en titel til begivenheden.');
+      return false;
+    }
+
+    const startDate =
+      data.start instanceof Date
+        ? new Date(data.start)
+        : new Date(data.start ?? Date.now());
+    const endDateInput =
+      data.end instanceof Date
+        ? new Date(data.end)
+        : new Date(data.end ?? data.start ?? Date.now());
+    const safeEndDate = ensureValidEnd(startDate, endDateInput);
+
+    setFormSaving(true);
+    setFormError('');
+    setActionStatus('');
+
+    const normalizedDescription = (data.description ?? '').trim();
+
+    const memberIdsFromFamily = Array.isArray(familyMembers)
+      ? familyMembers
+          .map((member) => member?.userId)
+          .filter((id) => typeof id === 'string' && id.trim().length > 0)
+      : [];
+
+    let effectiveMemberIds = Array.from(new Set(memberIdsFromFamily));
+
+    if (effectiveMemberIds.length <= 1) {
+      try {
+        const familyDoc = await db.collection('families').doc(familyId).get();
+        const docMembers = familyDoc.data()?.members ?? [];
+        if (Array.isArray(docMembers)) {
+          const extraIds = docMembers
+            .map((member) => member?.userId)
+            .filter((id) => typeof id === 'string' && id.trim().length > 0);
+          effectiveMemberIds = Array.from(new Set([...effectiveMemberIds, ...extraIds]));
+        }
+      } catch (_familyFetchError) {
+        // Ignorer fejl i fallback-opslaget; vi bruger de data vi har.
+      }
+    }
+
+    if (currentUserId && !effectiveMemberIds.includes(currentUserId)) {
+      effectiveMemberIds.push(currentUserId);
+    }
+
+    const pendingApprovals = effectiveMemberIds.filter((id) => id !== currentUserId);
+    const initialApprovedBy = currentUserId ? [currentUserId] : [];
+
+    const payload = {
+      title: trimmedTitle,
+      description: normalizedDescription ? normalizedDescription : '',
+      start: firebase.firestore.Timestamp.fromDate(startDate),
+      end: firebase.firestore.Timestamp.fromDate(safeEndDate),
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+      pendingApprovals,
+      approvedBy:
+        pendingApprovals.length === 0
+          ? Array.from(new Set([...initialApprovedBy, ...effectiveMemberIds]))
+          : initialApprovedBy,
+      status: pendingApprovals.length === 0 ? 'confirmed' : 'pending',
+      lastModifiedBy: currentUserId ?? null,
+      lastModifiedEmail: currentUserEmail ?? '',
+    };
+
+    try {
+      const createPayload = {
+        ...payload,
+        createdBy: currentUserEmail,
+        createdByUid: currentUserId ?? '',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      };
+
+      if (pendingApprovals.length === 0) {
+        createPayload.approvedAt = firebase.firestore.FieldValue.serverTimestamp();
+      }
+
+      await db
+        .collection('families')
+        .doc(familyId)
+        .collection('events')
+        .add(createPayload);
+
+      setActionStatus(
+        pendingApprovals.length === 0
+          ? 'Begivenhed oprettet og automatisk godkendt.'
+          : 'Begivenhed oprettet og afventer godkendelser.'
+      );
+
+      handleCloseForm();
+      return true;
+    } catch (_submitError) {
+      setFormError(
+        'Kunne ikke oprette begivenheden. Prøv igen.'
+      );
+      return false;
+    } finally {
+      setFormSaving(false);
+    }
+  };
+
+  useEffect(() => {
+    const currentUser = auth.currentUser;
+    if (!currentUser) {
+      setError('Ingen aktiv bruger fundet. Log ind igen.');
+      setLoading(false);
+      setCurrentUserProfile(null);
+      return;
+    }
+
+    let unsubscribeFamily = null;
+
+    const loadFamilyMetadata = async () => {
+      try {
+        setLoading(true);
+        setError('');
+        setInfoMessage('');
+
+        const userDoc = await db.collection('users').doc(currentUser.uid).get();
+        const userData = userDoc.data() ?? {};
+
+        setCurrentUserProfile({
+          name: userData.name ?? '',
+          age: userData.age ?? '',
+          gender: userData.gender ?? '',
+          city: userData.location ?? '',
+          preferredDays: Array.isArray(userData.preferredFamilyDays)
+            ? userData.preferredFamilyDays
+            : [],
+          avatarEmoji:
+            typeof userData.avatarEmoji === 'string' && userData.avatarEmoji.trim().length
+              ? userData.avatarEmoji.trim()
+              : DEFAULT_AVATAR_EMOJI,
+        });
+
+        await initializeCalendarContext(currentUser.uid);
+
+        const nextFamilyId = userData.familyId ?? null;
+
+        if (!nextFamilyId) {
+          setInfoMessage(
+            'Du er endnu ikke tilknyttet en familie. Opret eller tilslut dig en familie for at se familiens begivenheder.'
+          );
+          setFamilyId(null);
+          setConfirmedEvents([]);
+          setPendingEvents([]);
+          setFamilyMembers([]);
+          setEventsLoaded(false);
+          return;
+        }
+
+        setFamilyId(nextFamilyId);
+
+        unsubscribeFamily = db
+          .collection('families')
+          .doc(nextFamilyId)
+          .onSnapshot((snapshot) => {
+            if (!snapshot.exists) {
+              setInfoMessage(
+                'Familien blev ikke fundet. Måske er den blevet slettet.'
+              );
+              setConfirmedEvents([]);
+              setPendingEvents([]);
+              setFamilyMembers([]);
+              setEventsLoaded(false);
+              return;
+            }
+
+            const familyData = snapshot.data() ?? {};
+            setFamilyName(familyData.name ?? 'FamTime familie');
+            setFamilyMembers(
+              Array.isArray(familyData.members) ? familyData.members : []
+            );
+            setEventsLoaded(false);
+          });
+      } catch (_error) {
+        setError('Kunne ikke hente familieoplysninger. Prøv igen senere.');
+        setFamilyId(null);
+        setFamilyMembers([]);
+        setEventsLoaded(false);
+        setCurrentUserProfile(null);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    loadFamilyMetadata();
+
+    return () => {
+      if (unsubscribeFamily) {
+        unsubscribeFamily();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!familyId) {
+      setEventsLoaded(false);
+      setConfirmedEvents([]);
+      setPendingEvents([]);
+      return;
+    }
+
+    setEventsLoaded(false);
+
+    const unsubscribe = db
+      .collection('families')
+      .doc(familyId)
+      .collection('events')
+      .orderBy('start', 'asc')
+      .onSnapshot(
+        (snapshot) => {
+          const nextConfirmed = [];
+          const nextPending = [];
+
+          snapshot.forEach((doc) => {
+            const data = doc.data() ?? {};
+            const start = data.start?.toDate ? data.start.toDate() : null;
+            const end = data.end?.toDate ? data.end.toDate() : null;
+            const pendingChangeData = data.pendingChange ?? null;
+            const pendingChange = pendingChangeData
+              ? {
+                  title: pendingChangeData.title ?? '',
+                  description: pendingChangeData.description ?? '',
+                  start: pendingChangeData.start?.toDate
+                    ? pendingChangeData.start.toDate()
+                    : null,
+                  end: pendingChangeData.end?.toDate
+                    ? pendingChangeData.end.toDate()
+                    : null,
+                }
+              : null;
+            const event = {
+              id: doc.id,
+              title: data.title ?? 'Ingen titel',
+              description: data.description ?? '',
+              start,
+              end,
+              status: data.status ?? 'pending',
+              createdBy: data.createdBy ?? '',
+              createdByUid: data.createdByUid ?? '',
+              pendingApprovals: Array.isArray(data.pendingApprovals)
+                ? data.pendingApprovals
+                : [],
+              approvedBy: Array.isArray(data.approvedBy)
+                ? data.approvedBy
+                : [],
+              pendingChange,
+            };
+
+            if (event.status === 'pending') {
+              nextPending.push(event);
+            } else {
+              nextConfirmed.push(event);
+            }
+          });
+
+          setConfirmedEvents(nextConfirmed);
+          setPendingEvents(nextPending);
+          setEventsLoaded(true);
+        },
+        () => {
+          setError('Kunne ikke hente familieevents. Prøv igen senere.');
+          setConfirmedEvents([]);
+          setPendingEvents([]);
+          setEventsLoaded(true);
+        }
+      );
+
+    return unsubscribe;
+  }, [familyId]);
+
+  useEffect(() => {
+    const syncConfirmedEventsWithCalendar = async () => {
+      if (
+        !familyId ||
+        !calendarContext.ready ||
+        !calendarContext.primaryCalendarId ||
+        familySyncLockRef.current ||
+        !eventsLoaded
+      ) {
+        return;
+      }
+
+      familySyncLockRef.current = true;
+
+      try {
+        const permissions = await Calendar.getCalendarPermissionsAsync();
+        if (permissions.status !== 'granted') {
+          return;
+        }
+
+        const confirmed = confirmedEvents.filter(
+          (event) => event.status === 'confirmed'
+        );
+        const confirmedIds = new Set(confirmed.map((event) => event.id));
+
+        const refs = { ...familyCalendarRefsRef.current };
+
+        for (const event of confirmed) {
+          const start =
+            event.start instanceof Date && !Number.isNaN(event.start.getTime())
+              ? event.start
+              : new Date();
+          const proposedEnd =
+            event.end instanceof Date && !Number.isNaN(event.end.getTime())
+              ? event.end
+              : new Date(start.getTime() + DEFAULT_EVENT_DURATION_MINUTES * 60000);
+          const end = ensureValidEnd(start, proposedEnd);
+
+          const notesSections = [];
+          if (familyName) {
+            notesSections.push(`Familie: ${familyName}`);
+          }
+          if (event.description) {
+            notesSections.push(event.description);
+          }
+          notesSections.push('Synkroniseret fra FamTime familiebegivenheder.');
+
+          const eventDetails = {
+            title: event.title === 'Ingen titel' ? 'FamTime begivenhed' : event.title,
+            startDate: start,
+            endDate: end,
+            notes: notesSections.join('\n\n'),
+          };
+
+          const signature = `${eventDetails.title}::${eventDetails.startDate.getTime()}::${eventDetails.endDate.getTime()}::${eventDetails.notes}`;
+
+          const existingEntry = refs[event.id];
+          if (existingEntry?.calendarEventId) {
+            if (existingEntry.signature === signature) {
+              continue;
+            }
+            let updatedEntry = null;
+
+            try {
+              await Calendar.updateEventAsync(existingEntry.calendarEventId, eventDetails);
+              updatedEntry = {
+                calendarEventId: existingEntry.calendarEventId,
+                signature,
+                updatedAt: new Date().toISOString(),
+              };
+            } catch (updateError) {
+              let recreatedId = null;
+              try {
+                recreatedId = await Calendar.createEventAsync(
+                  calendarContext.primaryCalendarId,
+                  eventDetails
+                );
+              } catch (createAfterUpdateError) {
+                console.warn(
+                  '[FamilyEvents] recreate after update failed',
+                  createAfterUpdateError
+                );
+              }
+
+              if (recreatedId) {
+                updatedEntry = {
+                  calendarEventId: recreatedId,
+                  signature,
+                  updatedAt: new Date().toISOString(),
+                };
+
+                if (
+                  existingEntry.calendarEventId &&
+                  recreatedId !== existingEntry.calendarEventId
+                ) {
+                  try {
+                    await Calendar.deleteEventAsync(existingEntry.calendarEventId);
+                  } catch (_deleteError) {
+                    // Kan være slettet manuelt; ignorer fejlen og behold den nye reference.
+                  }
+                }
+              } else {
+                // Hvis vi hverken kan opdatere eller genskabe, behold den gamle reference
+                // så vi kan prøve igen ved næste synkronisering uden at miste kalenderposten.
+                updatedEntry = existingEntry;
+              }
+            }
+
+            refs[event.id] = updatedEntry;
+          } else {
+            try {
+              const calendarEventId = await Calendar.createEventAsync(
+                calendarContext.primaryCalendarId,
+                eventDetails
+              );
+              refs[event.id] = {
+                calendarEventId,
+                signature,
+                updatedAt: new Date().toISOString(),
+              };
+            } catch (createError) {
+              console.warn('[FamilyEvents] createEventAsync failed', createError);
+            }
+          }
+        }
+
+        for (const [eventId, entry] of Object.entries(refs)) {
+          if (!confirmedIds.has(eventId)) {
+            if (entry?.calendarEventId) {
+              try {
+                await Calendar.deleteEventAsync(entry.calendarEventId);
+              } catch (deleteError) {
+                console.warn('[FamilyEvents] deleteEventAsync failed', deleteError);
+              }
+            }
+            delete refs[eventId];
+          }
+        }
+
+        if (calendarContext.docRef) {
+          await calendarContext.docRef.set(
+            {
+              familyEventRefs: refs,
+              updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+            },
+            { merge: true }
+          );
+        }
+
+        familyCalendarRefsRef.current = refs;
+      } catch (syncError) {
+        console.warn('[FamilyEvents] syncConfirmedEventsWithCalendar', syncError);
+      } finally {
+        familySyncLockRef.current = false;
+      }
+    };
+
+    syncConfirmedEventsWithCalendar();
+  }, [
+    confirmedEvents,
+    calendarContext.docRef,
+    calendarContext.primaryCalendarId,
+    calendarContext.ready,
+    familyId,
+    eventsLoaded,
+  ]);
+
+  const renderEventFormModal = () => (
+    <Modal visible={formVisible} transparent animationType="slide">
+      <Pressable
+        style={styles.modalBackdrop}
+        onPress={handleBackdropPress}
+        accessibilityRole="button"
+        accessibilityLabel="Luk begivenhedsformular"
+      >
+        <KeyboardAvoidingView
+          behavior={isIOS ? 'padding' : undefined}
+          style={styles.modalAvoiding}
+        >
+          <Pressable
+            onPress={handleModalCardPress}
+            style={styles.modalCard}
+            accessibilityRole="none"
+          >
+            <ScrollView
+              contentContainerStyle={styles.modalScrollContent}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.modalHeader}>
+                <Text style={styles.modalTitle}>Ny familiebegivenhed</Text>
+                <Pressable
+                  onPress={handleCloseForm}
+                  style={styles.modalCloseButton}
+                  accessibilityRole="button"
+                  accessibilityLabel="Luk formular"
+                >
+                  <Text style={styles.modalCloseText}>Luk</Text>
+                </Pressable>
+              </View>
+
+              <Text style={styles.modalLabel}>Titel</Text>
+              <TextInput
+                style={styles.modalInput}
+                placeholder="Titel"
+                value={formData.title}
+                onChangeText={(text) => handleChangeFormField('title', text)}
+              />
+
+              <Text style={styles.modalLabel}>Beskrivelse</Text>
+              <TextInput
+                style={[styles.modalInput, styles.modalNotesInput]}
+                placeholder="Beskrivelse (valgfrit)"
+                value={formData.description}
+                onChangeText={(text) =>
+                  handleChangeFormField('description', text)
+                }
+                multiline
+              />
+
+              <Text style={styles.modalLabel}>Starttidspunkt</Text>
+              <Pressable
+                style={styles.modalDateButton}
+                onPress={() => setShowStartPicker(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Vælg starttidspunkt"
+              >
+                <Text style={styles.modalDateText}>
+                  {formatDateTime(formData.start)}
+                </Text>
+              </Pressable>
+              {(isIOS || showStartPicker) && (
+                <DateTimePicker
+                  value={formData.start}
+                  mode="datetime"
+                  display={isIOS ? 'inline' : 'default'}
+                  onChange={handleStartDateChange}
+                />
+              )}
+
+              <Text style={styles.modalLabel}>Sluttidspunkt</Text>
+              <Pressable
+                style={styles.modalDateButton}
+                onPress={() => setShowEndPicker(true)}
+                accessibilityRole="button"
+                accessibilityLabel="Vælg sluttidspunkt"
+              >
+                <Text style={styles.modalDateText}>
+                  {formatDateTime(formData.end)}
+                </Text>
+              </Pressable>
+            {(isIOS || showEndPicker) && (
+              <DateTimePicker
+                value={formData.end}
+                mode="datetime"
+                display={isIOS ? 'inline' : 'default'}
+                onChange={handleEndDateChange}
+              />
+            )}
+
+            <Text style={styles.modalLabel}>Hurtige forslag</Text>
+            {suggestions.length ? (
+              <View style={styles.suggestionsWrap}>
+                {suggestions.map((suggestion) => (
+                  <Pressable
+                    key={suggestion.id}
+                    onPress={() => handleSelectSuggestion(suggestion)}
+                    style={[
+                      styles.suggestionChip,
+                      selectedSuggestionId === suggestion.id
+                        ? styles.suggestionChipSelected
+                        : null,
+                    ]}
+                  >
+                    <Text style={styles.suggestionText}>
+                      {formatDateTime(suggestion.start)}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+            ) : (
+              <Text style={styles.modalHint}>
+                Ingen oplagte tider i de næste dage. Du kan vælge tidspunkt manuelt.
+              </Text>
+            )}
+
+            <ErrorMessage message={formError} />
+
+            <Button
+              title="Opret begivenhed"
+              onPress={handleSubmitEvent}
+              loading={formSaving}
+              style={styles.modalPrimaryButton}
+            />
+            <Button
+              title="Annuller"
+              onPress={handleCloseForm}
+              disabled={formSaving}
+              style={styles.modalSecondaryButton}
+            />
+            </ScrollView>
+          </Pressable>
+        </KeyboardAvoidingView>
+      </Pressable>
+    </Modal>
+  );
+
+  const renderMoodDetailsModal = () => {
+    if (!moodPreview) {
+      return null;
+    }
+
+    const summaryText = moodPreview.summary || moodPreview.description || '';
+    const descriptionText =
+      moodPreview.description && summaryText !== moodPreview.description
+        ? moodPreview.description
+        : '';
+
+    return (
+      <Modal visible transparent animationType="fade">
+        <View style={styles.detailsModalBackdrop}>
+          <Pressable
+            style={styles.detailsModalScrim}
+            onPress={handleCloseMoodPreview}
+            accessibilityRole="button"
+            accessibilityLabel="Luk humørkortdetaljer"
+          />
+          <View style={styles.detailsModalCard}>
+            <Text style={styles.detailsModalTitle}>{moodPreview.label}</Text>
+            {summaryText ? (
+              <Text style={styles.detailsModalSummary}>{summaryText}</Text>
+            ) : null}
+            {descriptionText ? (
+              <Text style={styles.detailsModalDescription}>{descriptionText}</Text>
+            ) : null}
+            <Button
+              title="Luk"
+              onPress={handleCloseMoodPreview}
+              style={styles.detailsModalButton}
+            />
+          </View>
+        </View>
+      </Modal>
+    );
+  };
+
+  return (
+    <>
+      <SafeAreaView style={styles.safeArea}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.container}>
+            <View style={styles.heroCard}>
+              <Text style={styles.title}>Planlæg familieaftaler</Text>
+              <Text style={styles.subtitle}>
+                Brug hurtige forslag til at finde ledige tidspunkter. Godkendelser og
+                ændringer foretages på skærmen &quot;Min kalender&quot;.
+              </Text>
+            </View>
+
+            <View style={styles.card}>
+              {shouldShowStatusCard ? (
+                <View style={styles.sectionCard}>
+                  <ErrorMessage message={error} />
+
+                  {actionStatus ? (
+                    <View style={styles.statusPill}>
+                      <Text style={styles.statusText}>{actionStatus}</Text>
+                    </View>
+                  ) : null}
+
+                  {infoMessage ? (
+                    <View style={styles.infoPill}>
+                      <Text style={styles.infoText}>{infoMessage}</Text>
+                    </View>
+                  ) : null}
+
+                  {loading ? (
+                    <Text style={styles.infoText}>Indlæser familiens kalender.</Text>
+                  ) : null}
+                </View>
+              ) : null}
+
+              {!infoMessage ? (
+                <>
+                  <View style={styles.sectionCard}>
+                    <View style={styles.sectionHeader}>
+                      <View style={styles.sectionTitleRow}>
+                        <Text style={styles.sectionTitle}>Ledige datoer</Text>
+                        <Text style={styles.sectionMeta}>{suggestionMetaText}</Text>
+                      </View>
+                      <Text style={styles.sectionHint}>
+                        Vælg en ledig dato og byg videre med humørkortene.
+                      </Text>
+                    </View>
+
+                    {activeSuggestion ? (
+                      <View style={styles.selectedSlotInline}>
+                        <Text style={styles.selectedSlotLabel}>Valgt tidspunkt</Text>
+                        <Text style={styles.selectedSlotText}>{activeTimeText}</Text>
+                        {activeDurationLabel ? (
+                          <Text style={styles.selectedSlotDuration}>
+                            {activeDurationLabel}
+                          </Text>
+                        ) : null}
+                      </View>
+                    ) : null}
+
+                    {sortedSuggestions.length ? null : (
+                      <Text style={styles.suggestionEmptyText}>
+                        Ingen ledige datoer fundet endnu. Opdater familiepræferencer
+                        under Konto ▸ Opdater profil.
+                      </Text>
+                    )}
+                  </View>
+
+                  {sortedSuggestions.length ? (
+                    <>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.slotScrollWrapper}
+                        contentContainerStyle={styles.slotScrollContent}
+                      >
+                        {sortedSuggestions.map((suggestion) => {
+                          const isActive =
+                            activeSuggestion && suggestion.id === activeSuggestion.id;
+                          return (
+                            <Pressable
+                              key={suggestion.id}
+                              onPress={() => handleSelectSuggestion(suggestion)}
+                              style={[
+                                styles.slotCard,
+                                isActive ? styles.slotCardActive : null,
+                              ]}
+                              accessibilityRole="button"
+                              accessibilityState={{ selected: isActive }}
+                              accessibilityLabel={`Ledig dato ${formatDateBadge(
+                                suggestion.start
+                              )}`}
+                            >
+                              <Text style={styles.slotDate}>
+                                {formatDateBadge(suggestion.start)}
+                              </Text>
+                              <Text style={styles.slotTime}>
+                                {formatTimeRange(suggestion.start, suggestion.end)}
+                              </Text>
+                              {isActive && activeDurationLabel ? (
+                                <Text style={styles.slotDuration}>{activeDurationLabel}</Text>
+                              ) : null}
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                    </>
+                  ) : null}
+
+                  <View style={styles.sectionCard}>
+                    <View style={styles.sectionHeader}>
+                      <Text style={styles.sectionTitle}>Humørkort</Text>
+                      <Text style={styles.sectionHint}>
+                        Vælg stemningen for aftalen. Tryk på øjet for at læse mere.
+                      </Text>
+                    </View>
+                  </View>
+
+                  <View style={styles.moodCardsWrap}>
+                    {moodCards.map((mood) => {
+                      const isActiveMood = activeMoodKey === mood.key;
+                      return (
+                        <Pressable
+                          key={mood.key}
+                          onPress={() => handleSelectMoodCard(mood)}
+                          style={[
+                            styles.moodCard,
+                            isActiveMood ? styles.moodCardActive : null,
+                          ]}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected: isActiveMood }}
+                          accessibilityLabel={`Humørkort ${mood.label}`}
+                        >
+                          <View style={styles.moodCardHeader}>
+                            <View style={styles.moodCardHeaderText}>
+                              <Text style={styles.moodCardLabel}>{mood.label}</Text>
+                              {mood.helper ? (
+                                <Text style={styles.moodCardCategory}>{mood.helper}</Text>
+                              ) : null}
+                            </View>
+                            <View style={styles.moodCardActions}>
+                              {isActiveMood ? (
+                                <Text style={styles.moodCardBadge}>Valgt</Text>
+                              ) : null}
+                              <Pressable
+                                onPress={() => setMoodPreview(mood)}
+                                hitSlop={12}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Vis detaljer for ${mood.label}`}
+                              >
+                                <Ionicons
+                                  name="eye-outline"
+                                  style={[
+                                    styles.moodCardIcon,
+                                    isActiveMood ? styles.moodCardIconActive : null,
+                                  ]}
+                                />
+                              </Pressable>
+                            </View>
+                          </View>
+                          <Text style={styles.moodCardSummary} numberOfLines={3}>
+                            {mood.summary || mood.description || ''}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+
+                  {activeMoodKey ? (
+                    <View style={[styles.sectionCard, styles.moodEditorCard]}>
+                      <Text style={styles.moodEditorTitle}>Tilpas humørkortet</Text>
+                      <Text style={styles.moodEditorHint}>
+                        Rediger titel og beskrivelse, eller generér en ny tekst baseret på humøret.
+                      </Text>
+
+                      <Text style={styles.moodEditorLabel}>Titel</Text>
+                      <TextInput
+                        style={styles.moodEditorInput}
+                        placeholder="Titel"
+                        value={moodDraftTitle}
+                        onChangeText={handleChangeMoodTitle}
+                      />
+
+                      <Text style={styles.moodEditorLabel}>Beskrivelse</Text>
+                      <TextInput
+                        style={[styles.moodEditorInput, styles.moodEditorMultiline]}
+                        placeholder="Beskrivelse (valgfri)"
+                        value={moodDraftDescription}
+                        onChangeText={handleChangeMoodDescription}
+                        multiline
+                      />
+
+                      <ErrorMessage message={formError} />
+
+                      {activeSuggestion && currentUserProfile ? (
+                        <View style={styles.aiBlock}>
+                          <AISuggestion
+                            user={currentUserProfile}
+                            variant="inline"
+                            onSuggestion={handleApplyAISuggestion}
+                          />
+                        </View>
+                      ) : null}
+
+                      <Button
+                        title="Planlæg familieaftalen"
+                        onPress={handlePlanFromMood}
+                        loading={formSaving}
+                        style={styles.moodPrimaryButton}
+                      />
+                    </View>
+                  ) : (
+                    <View style={styles.sectionCard}>
+                      <Text style={styles.moodHelper}>
+                        Vælg et humørkort for at fortsætte.
+                      </Text>
+                    </View>
+                  )}
+                </>
+              ) : null}
+              <Text style={styles.helperText}>
+                Når begivenheden er oprettet, vises den under &quot;Min kalender&quot;,
+                hvor alle familiemedlemmer kan godkende eller foreslå ændringer.
+              </Text>
+            </View>
+          </View>
+        </ScrollView>
+      </SafeAreaView>
+      {renderMoodDetailsModal()}
+      {renderEventFormModal()}
+    </>
+  );
+};
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.canvas,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xl,
+    backgroundColor: colors.canvas,
+  },
+  container: {
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
+  },
+  heroCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    marginBottom: spacing.lg,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.3,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 4,
+  },
+  title: {
+    fontSize: fontSizes.xxl,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  subtitle: {
+    fontSize: fontSizes.md,
+    color: colors.mutedText,
+    marginTop: spacing.xs,
+  },
+  card: {
+    backgroundColor: 'transparent',
+    paddingHorizontal: 0,
+    paddingVertical: spacing.lg,
+    marginBottom: spacing.lg,
+  },
+  statusPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(230, 138, 46, 0.16)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: 999,
+    marginBottom: spacing.sm,
+  },
+  statusText: {
+    color: colors.primaryDark,
+    fontSize: fontSizes.sm,
+    fontWeight: '600',
+  },
+  infoPill: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surfaceMuted,
+    marginBottom: spacing.md,
+  },
+  infoText: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+  },
+  aiBlock: {
+    marginTop: spacing.md,
+    marginBottom: spacing.md,
+  },
+  sectionCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+  sectionTitle: {
+    fontSize: fontSizes.lg,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: spacing.md,
+  },
+  sectionHeader: {
+    marginBottom: spacing.lg,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'baseline',
+    gap: spacing.sm,
+  },
+  sectionMeta: {
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+    fontWeight: '600',
+  },
+  sectionHint: {
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+    marginTop: spacing.xs,
+  },
+  slotScrollWrapper: {
+    marginBottom: spacing.lg,
+  },
+  slotScrollContent: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xs,
+  },
+  slotCard: {
+    minWidth: 190,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginRight: spacing.sm,
+  },
+  slotCardActive: {
+    backgroundColor: 'rgba(230, 138, 46, 0.18)',
+  },
+  slotDate: {
+    fontSize: fontSizes.sm,
+    fontWeight: '700',
+    color: colors.text,
+    textTransform: 'capitalize',
+  },
+  slotTime: {
+    marginTop: spacing.xs,
+    fontSize: fontSizes.md,
+    color: colors.text,
+    fontWeight: '600',
+  },
+  slotDuration: {
+    marginTop: spacing.xs,
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+    fontWeight: '600',
+  },
+  selectedSlotInline: {
+    marginTop: spacing.md,
+  },
+  selectedSlotLabel: {
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+  },
+  selectedSlotText: {
+    marginTop: spacing.xs,
+    fontSize: fontSizes.md,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  selectedSlotDuration: {
+    marginTop: spacing.xs,
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+  },
+  moodCardsWrap: {
+    flexDirection: 'column',
+    gap: spacing.sm,
+    marginTop: spacing.md,
+    marginBottom: spacing.lg,
+  },
+  moodCard: {
+    width: '100%',
+    borderRadius: radius.lg,
+    backgroundColor: colors.surface,
+    padding: spacing.md,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+  },
+  moodCardActive: {
+    backgroundColor: 'rgba(230, 138, 46, 0.18)',
+    shadowOpacity: 0.16,
+  },
+  moodCardHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  moodCardHeaderText: {
+    flexShrink: 1,
+    paddingRight: spacing.sm,
+  },
+  moodCardLabel: {
+    fontSize: fontSizes.md,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  moodCardCategory: {
+    marginTop: 2,
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+    fontWeight: '600',
+  },
+  moodCardActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  moodCardBadge: {
+    backgroundColor: colors.primary,
+    color: colors.primaryText,
+    fontSize: fontSizes.xs,
+    fontWeight: '700',
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 2,
+    borderRadius: 999,
+  },
+  moodCardSummary: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+  },
+  moodCardHelper: {
+    marginTop: spacing.xs,
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+  },
+  moodCardIcon: {
+    fontSize: fontSizes.lg,
+    color: colors.mutedText,
+  },
+  moodCardIconActive: {
+    color: colors.primaryDark,
+  },
+  moodEditorCard: {
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.18,
+    shadowRadius: 14,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 4,
+  },
+  moodEditorTitle: {
+    fontSize: fontSizes.lg,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  moodEditorHint: {
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+    marginTop: spacing.xs,
+    marginBottom: spacing.md,
+  },
+  moodEditorLabel: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+    marginBottom: spacing.xs,
+    marginTop: spacing.md,
+  },
+  moodEditorInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: fontSizes.md,
+    color: colors.text,
+    backgroundColor: colors.surfaceMuted,
+  },
+  moodEditorMultiline: {
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  moodPrimaryButton: {
+    marginTop: spacing.sm,
+  },
+  moodHelper: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+    marginBottom: spacing.lg,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(75, 46, 18, 0.45)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  detailsModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(75, 46, 18, 0.55)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: spacing.lg,
+  },
+  detailsModalScrim: {
+    position: 'absolute',
+    top: 0,
+    bottom: 0,
+    left: 0,
+    right: 0,
+  },
+  detailsModalCard: {
+    width: '100%',
+    maxWidth: 360,
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.25,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 5,
+  },
+  detailsModalTitle: {
+    fontSize: fontSizes.lg,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  detailsModalSummary: {
+    marginTop: spacing.sm,
+    fontSize: fontSizes.sm,
+    color: colors.text,
+    lineHeight: 22,
+  },
+  detailsModalDescription: {
+    marginTop: spacing.sm,
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+    lineHeight: 20,
+  },
+  detailsModalButton: {
+    marginTop: spacing.lg,
+  },
+  modalAvoiding: {
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
+  },
+  modalCard: {
+    backgroundColor: colors.background,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    width: '100%',
+    maxWidth: 520,
+    maxHeight: '90%',
+    overflow: 'hidden',
+  },
+  modalScrollContent: {
+    paddingBottom: spacing.xl,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.md,
+  },
+  modalTitle: {
+    fontSize: fontSizes.lg,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  modalCloseButton: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+  },
+  modalCloseText: {
+    color: colors.primary,
+    fontSize: fontSizes.md,
+    fontWeight: '600',
+  },
+  modalLabel: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+    marginBottom: spacing.xs,
+    marginTop: spacing.md,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: fontSizes.md,
+    color: colors.text,
+    backgroundColor: colors.surface,
+  },
+  modalNotesInput: {
+    minHeight: 100,
+    textAlignVertical: 'top',
+  },
+  modalDateButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    backgroundColor: colors.surfaceMuted,
+  },
+  modalDateText: {
+    fontSize: fontSizes.md,
+    color: colors.text,
+  },
+  suggestionsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginHorizontal: -spacing.xs,
+  },
+  suggestionChip: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    marginHorizontal: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  suggestionEmptyText: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+  },
+  suggestionChipSelected: {
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(230, 138, 46, 0.18)',
+  },
+  suggestionText: {
+    fontSize: fontSizes.sm,
+    color: colors.text,
+    fontWeight: '600',
+  },
+  modalHint: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+  },
+  modalPrimaryButton: {
+    marginTop: spacing.lg,
+  },
+  modalSecondaryButton: {
+    marginTop: spacing.sm,
+    backgroundColor: '#BFA386',
+  },
+  helperText: {
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+  },
+});
+
+export default FamilyEventsScreen;

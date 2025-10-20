@@ -1,0 +1,20 @@
+{
+  "name": "famtime-functions",
+  "version": "1.0.0",
+  "private": true,
+  "engines": {
+    "node": "18"
+  },
+  "main": "index.js",
+  "scripts": {
+    "lint": "echo \"No lint configured\""
+  },
+  "dependencies": {
+    "axios": "^1.7.7",
+    "firebase-admin": "^11.11.1",
+    "firebase-functions": "^4.8.0"
+  },
+  "devDependencies": {
+    "firebase-tools": "^14.19.1"
+  }
+}
