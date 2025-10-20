@@ -72,7 +72,7 @@ const RootNavigator = () => {
   const [currentUser, setCurrentUser] = useState(null);
 
   useEffect(() => {
-    // onAuthStateChanged holder navigationen i sync med Firebase login-status.
+    // Abonnerer på Firebase auth state, så navigationen opdateres automatisk.
     const unsubscribe = auth.onAuthStateChanged((user) => {
       setCurrentUser(user);
       setInitializing(false);
@@ -82,6 +82,7 @@ const RootNavigator = () => {
   }, []);
 
   if (initializing) {
+    // Viser indlæsningsskærm indtil første auth-state er kendt.
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color={colors.primary} />

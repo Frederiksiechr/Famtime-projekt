@@ -39,6 +39,7 @@ const CalendarSyncScreen = ({ navigation }) => {
   }, []);
 
   const persistCalendarStatus = async (payload) => {
+    // Gemmer den seneste synkroniseringsstatus i Firestore til senere opslag.
     if (!userId) {
       return;
     }
@@ -56,6 +57,7 @@ const CalendarSyncScreen = ({ navigation }) => {
   };
 
   const handleAccept = async () => {
+    // Anmoder om kalenderadgang og udpeger en skrivbar kalender til synk.
     if (!userId) {
       setErrorMessage(
         'Kunne ikke finde en aktiv bruger. Log venligst ind igen.'
@@ -148,6 +150,7 @@ const CalendarSyncScreen = ({ navigation }) => {
   };
 
   const handleDecline = async () => {
+    // Registrerer, at brugeren har valgt kalender-synkronisering fra.
     if (userId) {
       try {
         await persistCalendarStatus({ permission: 'declined', synced: false });
@@ -160,6 +163,7 @@ const CalendarSyncScreen = ({ navigation }) => {
   };
 
   const handleContinue = () => {
+    // Hopper videre til familieopsætningen efter kalendersynk-flowet.
     navigation.replace('FamilySetup');
   };
 

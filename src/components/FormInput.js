@@ -19,6 +19,7 @@ const FormInput = ({ label, error, style, ...restProps }) => {
   const [isFocused, setIsFocused] = useState(false);
 
   const handleFocus = (event) => {
+    // Tilføjer fokus-styling og videresender onFocus til forældrekomponenten.
     setIsFocused(true);
     if (typeof restProps.onFocus === 'function') {
       restProps.onFocus(event);
@@ -26,6 +27,7 @@ const FormInput = ({ label, error, style, ...restProps }) => {
   };
 
   const handleBlur = (event) => {
+    // Fjerner fokus-styling og bevarer evt. ekstern onBlur-adfærd.
     setIsFocused(false);
     if (typeof restProps.onBlur === 'function') {
       restProps.onBlur(event);

@@ -33,6 +33,7 @@ const LoginScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
 
   const validate = () => {
+    // Sikrer at brugerens input er gyldigt før login-forsøg.
     const nextErrors = {};
 
     if (!email.trim()) {
@@ -52,6 +53,7 @@ const LoginScreen = ({ navigation }) => {
   };
 
   const handleLogin = async () => {
+    // Forsøger at logge brugeren ind og oversætter fejl til menneskelig tekst.
     if (!validate()) {
       return;
     }

@@ -32,6 +32,7 @@ const ForgotPasswordScreen = () => {
   const [loading, setLoading] = useState(false);
 
   const handleReset = async () => {
+    // Sender reset-mail via Firebase og håndterer validering/feedback.
     if (!email.trim()) {
       setFieldError('E-mail skal udfyldes.');
       return;

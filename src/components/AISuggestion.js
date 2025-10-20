@@ -214,6 +214,7 @@ const parseAge = (value) => {
 };
 
 const simpleHash = (input) => {
+  // Genererer et stabilt tal der bruges til deterministiske fallback-forslag.
   const str = String(input ?? '');
   let hash = 0;
   for (let index = 0; index < str.length; index += 1) {

@@ -34,6 +34,7 @@ const SignupScreen = ({ navigation }) => {
   const [loading, setLoading] = useState(false);
 
   const validate = () => {
+    // Validerer formularfelter og bygger en samlet fejlliste.
     const nextErrors = {};
 
     if (!email.trim()) {
@@ -59,6 +60,7 @@ const SignupScreen = ({ navigation }) => {
   };
 
   const handleSignup = async () => {
+    // Opretter ny konto i Firebase og registrerer en basisprofil i Firestore.
     if (!validate()) {
       return;
     }

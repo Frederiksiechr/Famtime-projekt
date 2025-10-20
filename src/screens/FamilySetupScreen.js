@@ -50,6 +50,7 @@ const nouns = [
 ];
 
 const generateFamilyCode = async () => {
+  // Finder et menneskeligt læsbart familie-ID og sikrer, at det er unikt i Firestore.
   const attempts = 40;
   for (let i = 0; i < attempts; i += 1) {
     const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
@@ -85,6 +86,7 @@ const FamilySetupScreen = ({ navigation }) => {
 
   useEffect(() => {
     const loadFamily = async () => {
+      // Slår op i `users` for at se om brugeren allerede er tilknyttet en familie.
       if (!userId) {
         setInitializing(false);
         return;
@@ -119,6 +121,7 @@ const FamilySetupScreen = ({ navigation }) => {
   }, [mode]);
 
   const handleAddInviteEmail = () => {
+    // Tilføjer en e-mail til invitationer efter normalisering og validering.
     const normalized = inviteEmail.trim().toLowerCase();
 
     if (!normalized) {
@@ -147,10 +150,12 @@ const FamilySetupScreen = ({ navigation }) => {
   };
 
   const handleRemoveInvite = (email) => {
+    // Fjerner en planlagt invitation fra listen uden mutation.
     setInvitedEmails((prev) => prev.filter((item) => item !== email));
   };
 
   const resolveInvitees = async (familyId) => {
+    // Finder eksisterende brugere med matchende e-mail og opdeler dem i medlems- og pending-lister.
     const resolvedMembers = [];
     const pendingInvites = [];
     const conflicts = [];
@@ -188,6 +193,7 @@ const FamilySetupScreen = ({ navigation }) => {
   };
 
   const handleCreateFamily = async () => {
+    // Opretter en ny familie i Firestore og knytter inviterede medlemmer.
     if (!userId) {
       setError('Ingen aktiv bruger fundet. Log ind igen.');
       return;
@@ -270,6 +276,7 @@ const FamilySetupScreen = ({ navigation }) => {
   };
 
   const handleJoinFamily = async () => {
+    // Tilslutter den indtastede familie, hvis koden findes og brugeren ikke allerede er medlem.
     if (!userId) {
       setError('Ingen aktiv bruger fundet. Log ind igen.');
       return;

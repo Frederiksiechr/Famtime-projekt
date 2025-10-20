@@ -11,6 +11,7 @@ import 'firebase/compat/firestore';
 import { firebaseConfig } from '../config/firebaseConfig';
 
 if (!firebase.apps.length) {
+  // Sikrer at Firebase kun initialiseres én gang i Expo-miljøet.
   firebase.initializeApp(firebaseConfig);
 }
 

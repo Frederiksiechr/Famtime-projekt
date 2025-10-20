@@ -130,6 +130,7 @@ const getDurationLabel = (start, end) => {
 };
 
 const createDefaultEventState = () => {
+  // Initialiserer formularfelter med et start- og sluttidspunkt i nær fremtid.
   const start = new Date();
   start.setSeconds(0, 0);
   const end = new Date(start.getTime() + DEFAULT_EVENT_DURATION_MINUTES * 60000);
@@ -154,6 +155,7 @@ const formatDateTime = (date) => {
 };
 
 const FamilyEventsScreen = () => {
+  // Samler alt state omkring familiens events, forslag og kalenderintegration.
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
@@ -210,6 +212,7 @@ const FamilyEventsScreen = () => {
   }, [suggestions]);
 
   useEffect(() => {
+    // Når forslagene ændrer sig, vælger vi automatisk et aktivt tidsrum.
     if (!sortedSuggestions.length) {
       setActiveSlotId(null);
       return;
@@ -224,6 +227,7 @@ const FamilyEventsScreen = () => {
   }, [sortedSuggestions]);
 
   const activeSuggestion = useMemo(() => {
+    // Finder den suggestion der skal præsenteres i panelet.
     if (!sortedSuggestions.length) {
       return null;
     }
