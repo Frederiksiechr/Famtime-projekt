@@ -34,3 +34,8 @@ Frederik og Oliver har haft hovedansvaret for opsætningen og konfigurationen af
 Anders og August har været ansvarlige for udviklingen af login-funktionaliteten og sikret, at denne fungerer gnidningsfrit i samspil med Firebase.
 
 Sammen har hele gruppen bidraget til at udvikle appens overordnede funktionalitet og design. Alle medlemmer har arbejdet på forskellige sider og features, samt i fællesskab stået for opsætningen og implementeringen af AI-løsningen i applikationen.
+
+
+Link til video:
+
+youtube.com/watch?si=DM1fmRcsjcJyHoU9&v=ji9LOtdXmU0&feature=youtu.be 
