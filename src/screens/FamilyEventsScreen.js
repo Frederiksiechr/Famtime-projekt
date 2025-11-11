@@ -16,8 +16,8 @@ import {
   Alert,
   Platform,
   KeyboardAvoidingView,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Calendar from 'expo-calendar';
 
 import Button from '../components/Button';

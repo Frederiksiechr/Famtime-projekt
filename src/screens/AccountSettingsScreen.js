@@ -5,7 +5,8 @@
  * - Giver mulighed for at acceptere familieinvitationer og se teamet.
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Alert, SafeAreaView } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Alert } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Button from '../components/Button';
 import ErrorMessage from '../components/ErrorMessage';
