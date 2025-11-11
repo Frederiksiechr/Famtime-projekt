@@ -23,6 +23,88 @@ const WEEK_DAY_LABELS = {
   sunday: 'Søndag',
 };
 
+const extractPrimaryTimeWindow = (timeWindows = {}) => {
+  if (!timeWindows || typeof timeWindows !== 'object') {
+    return { start: '', end: '' };
+  }
+
+  const candidates = [];
+
+  if (Array.isArray(timeWindows.default) && timeWindows.default.length) {
+    candidates.push(timeWindows.default[0]);
+  }
+
+  Object.keys(timeWindows).forEach((key) => {
+    if (key === 'default') {
+      return;
+    }
+    const entry = timeWindows[key];
+    if (Array.isArray(entry) && entry.length) {
+      candidates.push(entry[0]);
+    }
+  });
+
+  const firstValid = candidates.find((candidate) => {
+    if (!candidate || typeof candidate !== 'object') {
+      return false;
+    }
+    const readStart = typeof candidate.start === 'string'
+      ? candidate.start
+      : typeof candidate.get === 'function'
+        ? candidate.get('start')
+        : null;
+    const readEnd = typeof candidate.end === 'string'
+      ? candidate.end
+      : typeof candidate.get === 'function'
+        ? candidate.get('end')
+        : null;
+    return typeof readStart === 'string' && typeof readEnd === 'string';
+  });
+
+  if (!firstValid) {
+    return { start: '', end: '' };
+  }
+
+  const readValue = (key) => {
+    if (typeof firstValid[key] === 'string') {
+      return firstValid[key];
+    }
+    if (typeof firstValid.get === 'function') {
+      const value = firstValid.get(key);
+      return typeof value === 'string' ? value : '';
+    }
+    return '';
+  };
+
+  return {
+    start: readValue('start'),
+    end: readValue('end'),
+  };
+};
+
+const formatTimeWindow = (start, end) => {
+  if (typeof start === 'string' && start && typeof end === 'string' && end) {
+    return `${start} - ${end}`;
+  }
+  return 'Ikke udfyldt';
+};
+
+const formatDurationRange = (min, max) => {
+  const minValid = Number.isFinite(min);
+  const maxValid = Number.isFinite(max);
+
+  if (minValid && maxValid) {
+    return `${min} - ${max} min`;
+  }
+  if (minValid) {
+    return `Min. ${min} min`;
+  }
+  if (maxValid) {
+    return `Op til ${max} min`;
+  }
+  return 'Ikke udfyldt';
+};
+
 const formatPreferredDays = (days) => {
   if (!Array.isArray(days) || !days.length) {
     return 'Ikke udfyldt';
@@ -96,6 +178,20 @@ const AccountSettingsScreen = ({ navigation }) => {
         const userDoc = await db.collection('users').doc(currentUser.uid).get();
         const userData = userDoc.data() ?? {};
 
+        const primaryTimeWindow = extractPrimaryTimeWindow(
+          userData.preferredFamilyTimeWindows
+        );
+        const minDurationMinutes = Number.isFinite(
+          userData.preferredFamilyMinDurationMinutes
+        )
+          ? userData.preferredFamilyMinDurationMinutes
+          : null;
+        const maxDurationMinutes = Number.isFinite(
+          userData.preferredFamilyMaxDurationMinutes
+        )
+          ? userData.preferredFamilyMaxDurationMinutes
+          : null;
+
         setUserProfile({
           email: userEmail,
           name: userData.name ?? '',
@@ -111,6 +207,14 @@ const AccountSettingsScreen = ({ navigation }) => {
           preferredFamilyDays: Array.isArray(userData.preferredFamilyDays)
             ? userData.preferredFamilyDays
             : [],
+          preferredTimeStart:
+            typeof primaryTimeWindow.start === 'string'
+              ? primaryTimeWindow.start
+              : '',
+          preferredTimeEnd:
+            typeof primaryTimeWindow.end === 'string' ? primaryTimeWindow.end : '',
+          preferredMinDuration: minDurationMinutes,
+          preferredMaxDuration: maxDurationMinutes,
           avatarEmoji:
             typeof userData.avatarEmoji === 'string' && userData.avatarEmoji.trim().length
               ? userData.avatarEmoji.trim()
@@ -554,6 +658,24 @@ const AccountSettingsScreen = ({ navigation }) => {
               <Text style={styles.fieldText}>
                 Foretrukne dage:{' '}
                 {formatPreferredDays(userProfile?.preferredFamilyDays)}
+              </Text>
+              <Text style={styles.fieldText}>
+                Foretrukket tidsrum:{' '}
+                {formatTimeWindow(
+                  userProfile?.preferredTimeStart,
+                  userProfile?.preferredTimeEnd
+                )}
+              </Text>
+              <Text style={styles.fieldText}>
+                Varighedsgrænser:{' '}
+                {formatDurationRange(
+                  typeof userProfile?.preferredMinDuration === 'number'
+                    ? userProfile.preferredMinDuration
+                    : null,
+                  typeof userProfile?.preferredMaxDuration === 'number'
+                    ? userProfile.preferredMaxDuration
+                    : null
+                )}
               </Text>
             </>
           )}
