@@ -27,6 +27,7 @@ import AISuggestion, {
   generateProfileSuggestion,
 } from '../components/AISuggestion';
 import { auth, db, firebase } from '../lib/firebase';
+import findMutualAvailability, { availabilityUtils } from '../lib/availability';
 import { colors, spacing, fontSizes, radius } from '../styles/theme';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
@@ -37,6 +38,18 @@ const SUGGESTION_LOOKAHEAD_DAYS = 7;
 const SUGGESTION_LIMIT = 6;
 const SUGGESTION_HOURS = [9, 12, 15, 18];
 const MIN_SUGGESTION_OFFSET_MINUTES = 60;
+const CALENDAR_DEVICE_LOOKAHEAD_DAYS = 21;
+const DEFAULT_GROUP_TIME_ZONE = 'Europe/Copenhagen';
+const WEEKDAY_SHORT_ORDER = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const SHORT_TO_FULL_DAY_KEY = {
+  Mon: 'monday',
+  Tue: 'tuesday',
+  Wed: 'wednesday',
+  Thu: 'thursday',
+  Fri: 'friday',
+  Sat: 'saturday',
+  Sun: 'sunday',
+};
 const isIOS = Platform.OS === 'ios';
 
 const WEEK_DAYS = [
@@ -104,6 +117,167 @@ const formatTimeRange = (start, end) => {
   });
 
   return `${startLabel} -> ${endDateLabel.replace('.', '')} ${endLabel}`;
+};
+
+const mergeBusyIntervals = (primary = [], secondary = []) => {
+  const source = [
+    ...(Array.isArray(primary) ? primary : []),
+    ...(Array.isArray(secondary) ? secondary : []),
+  ]
+    .map((interval) => {
+      const start = availabilityUtils.toDate(interval?.start);
+      const end = availabilityUtils.toDate(interval?.end);
+      if (!start || !end || end <= start) {
+        return null;
+      }
+      return {
+        start: new Date(start.getTime()),
+        end: new Date(end.getTime()),
+      };
+    })
+    .filter((interval) => Boolean(interval))
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+
+  if (!source.length) {
+    return [];
+  }
+
+  const merged = [source[0]];
+  for (let i = 1; i < source.length; i += 1) {
+    const current = source[i];
+    const last = merged[merged.length - 1];
+    if (current.start <= last.end) {
+      if (current.end > last.end) {
+        last.end = current.end;
+      }
+    } else {
+      merged.push({ start: current.start, end: current.end });
+    }
+  }
+
+  return merged;
+};
+
+const normalizeBusyPayload = (input) => {
+  if (!Array.isArray(input)) {
+    return [];
+  }
+
+  return input
+    .map((item) => {
+      const start = availabilityUtils.toDate(item?.start ?? item?.from ?? item?.begin);
+      const end = availabilityUtils.toDate(item?.end ?? item?.to ?? item?.finish);
+      if (!start || !end || end <= start) {
+        return null;
+      }
+      return {
+        start: new Date(start.getTime()),
+        end: new Date(end.getTime()),
+      };
+    })
+    .filter((interval) => Boolean(interval));
+};
+
+const isFirestoreFieldValue = (value) =>
+  Boolean(
+    value &&
+      typeof value === 'object' &&
+      typeof value.isEqual === 'function' &&
+      typeof value._methodName === 'string'
+  );
+
+const safeReadPreferenceField = (target, key) => {
+  if (!target || (typeof target !== 'object' && typeof target !== 'function')) {
+    return undefined;
+  }
+
+  try {
+    const value = target[key];
+    if (isFirestoreFieldValue(value)) {
+      return undefined;
+    }
+    return value;
+  } catch (_error) {
+    return undefined;
+  }
+};
+
+const extractPreferencesFromCalendarDoc = (data) => {
+  if (!data || typeof data !== 'object') {
+    return {};
+  }
+
+  const sources = [data.preferences, data.sharedPreferences, data.constraints];
+
+  const resolvePreference = (key) => {
+    for (const source of sources) {
+      const value = safeReadPreferenceField(source, key);
+      if (value !== undefined) {
+        return value;
+      }
+    }
+    return safeReadPreferenceField(data, key);
+  };
+
+  const preferenceKeys = [
+    'allowedWeekdays',
+    'timeWindows',
+    'minDurationMinutes',
+    'maxDurationMinutes',
+    'bufferBeforeMinutes',
+    'bufferAfterMinutes',
+    'timeZone',
+    'maxSuggestionDaysPerWeek',
+    'preferredDurationMinutes',
+    'slotStepMinutes',
+  ];
+
+  const preferences = {};
+  preferenceKeys.forEach((key) => {
+    const value = resolvePreference(key);
+    if (value !== undefined) {
+      preferences[key] = value;
+    }
+  });
+
+  return preferences;
+};
+
+const areBusyListsEqual = (first = [], second = []) => {
+  if (!Array.isArray(first) || !Array.isArray(second)) {
+    return false;
+  }
+  if (first.length !== second.length) {
+    return false;
+  }
+
+  for (let i = 0; i < first.length; i += 1) {
+    const a = first[i];
+    const b = second[i];
+    if (!a || !b) {
+      return false;
+    }
+    if (a.start.getTime() !== b.start.getTime() || a.end.getTime() !== b.end.getTime()) {
+      return false;
+    }
+  }
+
+  return true;
+};
+
+const shallowEqualObjects = (a = {}, b = {}) => {
+  const aKeys = Object.keys(a);
+  const bKeys = Object.keys(b);
+  if (aKeys.length !== bKeys.length) {
+    return false;
+  }
+  for (let i = 0; i < aKeys.length; i += 1) {
+    const key = aKeys[i];
+    if (!Object.is(a[key], b[key])) {
+      return false;
+    }
+  }
+  return true;
 };
 
 const getDurationLabel = (start, end) => {
@@ -181,6 +355,7 @@ const FamilyEventsScreen = () => {
   });
   const [familyMembers, setFamilyMembers] = useState([]);
   const [familyPreferences, setFamilyPreferences] = useState({});
+  const [calendarAvailability, setCalendarAvailability] = useState({});
   const [eventsLoaded, setEventsLoaded] = useState(false);
   const familyCalendarRefsRef = useRef({});
   const familySyncLockRef = useRef(false);
@@ -191,6 +366,7 @@ const FamilyEventsScreen = () => {
   const [moodDraftTitle, setMoodDraftTitle] = useState('');
   const [moodDraftDescription, setMoodDraftDescription] = useState('');
   const [moodPreview, setMoodPreview] = useState(null);
+  const deviceBusyLoadedRef = useRef('');
   const shouldShowStatusCard =
     Boolean(error) || Boolean(actionStatus) || Boolean(infoMessage) || loading;
 
@@ -336,6 +512,43 @@ const FamilyEventsScreen = () => {
         snapshots.forEach((docSnapshot, index) => {
           if (docSnapshot && docSnapshot.exists) {
             const data = docSnapshot.data() ?? {};
+            const timeWindows =
+              data?.preferredFamilyTimeWindows && typeof data.preferredFamilyTimeWindows === 'object'
+                ? data.preferredFamilyTimeWindows
+                : null;
+            const minDurationMinutes =
+              typeof data?.preferredFamilyMinDurationMinutes === 'number'
+                ? data.preferredFamilyMinDurationMinutes
+                : null;
+            const maxDurationMinutes =
+              typeof data?.preferredFamilyMaxDurationMinutes === 'number'
+                ? data.preferredFamilyMaxDurationMinutes
+                : null;
+            const preferredDurationMinutes =
+              typeof data?.preferredFamilyPreferredDurationMinutes === 'number'
+                ? data.preferredFamilyPreferredDurationMinutes
+                : null;
+            const slotStepMinutes =
+              typeof data?.preferredFamilySlotStepMinutes === 'number'
+                ? data.preferredFamilySlotStepMinutes
+                : null;
+            const maxSuggestionDaysPerWeek =
+              typeof data?.preferredFamilyMaxSuggestionDaysPerWeek === 'number'
+                ? data.preferredFamilyMaxSuggestionDaysPerWeek
+                : null;
+            const bufferBeforeMinutes =
+              typeof data?.preferredFamilyBufferBeforeMinutes === 'number'
+                ? data.preferredFamilyBufferBeforeMinutes
+                : null;
+            const bufferAfterMinutes =
+              typeof data?.preferredFamilyBufferAfterMinutes === 'number'
+                ? data.preferredFamilyBufferAfterMinutes
+                : null;
+            const timeZone =
+              typeof data?.preferredFamilyTimeZone === 'string' && data.preferredFamilyTimeZone.trim().length
+                ? data.preferredFamilyTimeZone.trim()
+                : null;
+
             nextPreferences[memberIds[index]] = {
               frequency:
                 typeof data.preferredFamilyFrequency === 'number'
@@ -344,6 +557,15 @@ const FamilyEventsScreen = () => {
               days: Array.isArray(data.preferredFamilyDays)
                 ? data.preferredFamilyDays
                 : [],
+              timeWindows,
+              minDurationMinutes,
+              maxDurationMinutes,
+              preferredDurationMinutes,
+              slotStepMinutes,
+              maxSuggestionDaysPerWeek,
+              bufferBeforeMinutes,
+              bufferAfterMinutes,
+              timeZone,
             };
           }
         });
@@ -364,6 +586,219 @@ const FamilyEventsScreen = () => {
       isActive = false;
     };
   }, [familyMembers]);
+
+  useEffect(() => {
+    const memberIds = Array.isArray(familyMembers)
+      ? familyMembers
+          .map((member) => member?.userId)
+          .filter((id) => typeof id === 'string' && id.trim().length > 0)
+      : [];
+
+    const uniqueIds = new Set(memberIds);
+    if (currentUserId) {
+      uniqueIds.add(currentUserId);
+    }
+
+    if (!uniqueIds.size) {
+      setCalendarAvailability({});
+      return () => {};
+    }
+
+    const activeIds = Array.from(uniqueIds);
+    let isMounted = true;
+    const unsubscribes = [];
+
+    setCalendarAvailability((prev) => {
+      const next = {};
+      activeIds.forEach((id) => {
+        if (prev[id]) {
+          next[id] = prev[id];
+        } else {
+          next[id] = { busy: { shared: [], device: [] }, preferences: {} };
+        }
+      });
+      return next;
+    });
+
+    activeIds.forEach((userId) => {
+      const unsubscribe = db
+        .collection('calendar')
+        .doc(userId)
+        .onSnapshot(
+          (snapshot) => {
+            if (!isMounted) {
+              return;
+            }
+
+            const data = snapshot.exists ? snapshot.data() ?? {} : {};
+            const sharedBusy = [data.sharedBusy, data.busyIntervals, data.busy]
+              .filter((payload) => Array.isArray(payload))
+              .reduce((acc, payload) => mergeBusyIntervals(acc, normalizeBusyPayload(payload)), []);
+            const preferences = extractPreferencesFromCalendarDoc(data);
+
+            setCalendarAvailability((prev) => {
+              const prevEntry = prev[userId] ?? { busy: { shared: [], device: [] }, preferences: {} };
+              const nextBusyShared = sharedBusy.length
+                ? sharedBusy
+                : [];
+              const isBusySame = areBusyListsEqual(prevEntry.busy?.shared ?? [], nextBusyShared);
+              const nextPreferences = Object.keys(preferences).length
+                ? { ...prevEntry.preferences, ...preferences }
+                : prevEntry.preferences;
+              const preferencesChanged = !shallowEqualObjects(prevEntry.preferences ?? {}, nextPreferences ?? {});
+
+              if (isBusySame && !preferencesChanged) {
+                return prev;
+              }
+
+              const nextEntry = {
+                busy: {
+                  shared: nextBusyShared,
+                  device: prevEntry.busy?.device ?? [],
+                },
+                preferences: nextPreferences,
+              };
+              return {
+                ...prev,
+                [userId]: nextEntry,
+              };
+            });
+          },
+          (error) => {
+            console.warn('[FamilyEvents] calendar availability snapshot', error);
+          }
+        );
+
+      unsubscribes.push(unsubscribe);
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribes.forEach((unsubscribe) => {
+        if (typeof unsubscribe === 'function') {
+          unsubscribe();
+        }
+      });
+    };
+  }, [familyMembers, currentUserId]);
+
+  useEffect(() => {
+    if (
+      !currentUserId ||
+      !calendarContext.ready ||
+      !Array.isArray(calendarContext.calendarIds) ||
+      !calendarContext.calendarIds.length
+    ) {
+      return undefined;
+    }
+
+    const idsKey = calendarContext.calendarIds.slice().sort().join('|');
+    const loadKey = `${currentUserId}:${idsKey}`;
+
+    if (deviceBusyLoadedRef.current === loadKey) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const loadDeviceBusy = async () => {
+      try {
+        const permissions = await Calendar.getCalendarPermissionsAsync();
+        if (permissions.status !== 'granted') {
+          return;
+        }
+
+        const now = new Date();
+        now.setSeconds(0, 0);
+        const start = new Date(now.getTime());
+        const end = new Date(
+          start.getTime() + CALENDAR_DEVICE_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000
+        );
+
+        const events = await Calendar.getEventsAsync(calendarContext.calendarIds, start, end);
+        if (cancelled) {
+          return;
+        }
+
+        const deviceBusy = Array.isArray(events)
+          ? events
+              .map((event) => {
+                const startDate = availabilityUtils.toDate(
+                  event.startDate ?? event.start ?? event.startTime ?? null
+                );
+                const endDate = availabilityUtils.toDate(
+                  event.endDate ?? event.end ?? event.endTime ?? null
+                );
+                if (!startDate || !endDate || endDate <= startDate) {
+                  return null;
+                }
+                return {
+                  start: new Date(startDate.getTime()),
+                  end: new Date(endDate.getTime()),
+                };
+              })
+              .filter((interval) => Boolean(interval))
+          : [];
+
+        setCalendarAvailability((prev) => {
+          const prevEntry = prev[currentUserId] ?? { busy: { shared: [], device: [] }, preferences: {} };
+          const mergedDeviceBusy = mergeBusyIntervals(deviceBusy, []);
+          const deviceChanged = !areBusyListsEqual(prevEntry.busy?.device ?? [], mergedDeviceBusy);
+
+          if (!deviceChanged) {
+            return prev;
+          }
+
+          return {
+            ...prev,
+            [currentUserId]: {
+              busy: {
+                shared: prevEntry.busy?.shared ?? [],
+                device: mergedDeviceBusy,
+              },
+              preferences: prevEntry.preferences ?? {},
+            },
+          };
+        });
+
+        deviceBusyLoadedRef.current = loadKey;
+      } catch (error) {
+        console.warn('[FamilyEvents] loadDeviceCalendarBusy', error);
+      }
+    };
+
+    loadDeviceBusy();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [calendarContext.ready, calendarContext.calendarIds, currentUserId]);
+
+  const calendarEntries = useMemo(() => {
+    const memberIds = Array.isArray(familyMembers)
+      ? familyMembers
+          .map((member) => member?.userId)
+          .filter((id) => typeof id === 'string' && id.trim().length > 0)
+      : [];
+
+    const uniqueIds = new Set(memberIds);
+    if (currentUserId) {
+      uniqueIds.add(currentUserId);
+    }
+
+    return Array.from(uniqueIds).map((userId) => {
+      const entry = calendarAvailability[userId] ?? { busy: { shared: [], device: [] }, preferences: {} };
+      const sharedBusy = entry.busy?.shared ?? [];
+      const deviceBusy = entry.busy?.device ?? [];
+      const busy = mergeBusyIntervals(sharedBusy, deviceBusy);
+
+      return {
+        userId,
+        busy,
+        preferences: entry.preferences ?? {},
+      };
+    });
+  }, [familyMembers, currentUserId, calendarAvailability]);
 
   const handleOpenCreateForm = (suggestion = null, overrides = {}) => {
   if (!familyId) {
@@ -451,38 +886,71 @@ const FamilyEventsScreen = () => {
   };
 
   const buildSuggestions = useCallback(() => {
-    const ranges = [];
-    const collectRange = (start, end) => {
-      if (start instanceof Date && end instanceof Date) {
-        ranges.push({ start, end });
+    const busyRanges = [];
+    const appendBusyRange = (start, end) => {
+      const startDate = availabilityUtils.toDate(start);
+      const endDate = availabilityUtils.toDate(end);
+      if (!startDate || !endDate || endDate <= startDate) {
+        return;
       }
+      busyRanges.push({
+        start: new Date(startDate.getTime()),
+        end: new Date(endDate.getTime()),
+      });
     };
 
     [...confirmedEvents, ...pendingEvents].forEach((event) => {
-      collectRange(event.start, event.end);
+      appendBusyRange(event.start, event.end);
       if (event.pendingChange) {
-        collectRange(event.pendingChange.start, event.pendingChange.end);
+        appendBusyRange(event.pendingChange.start, event.pendingChange.end);
       }
     });
 
-    const preferenceEntries = Object.values(familyPreferences);
-    const dayCounts = new Map(
-      WEEK_DAYS.map(({ key }) => [key, 0])
-    );
+    const preferenceEntries = Object.entries(familyPreferences ?? {});
+    const dayCounts = new Map(WEEK_DAYS.map(({ key }) => [key, 0]));
     let frequencyTotal = 0;
     let frequencyCount = 0;
+    let explicitMaxDaysPreference = null;
+    let hasExplicitTimeWindowPreference = false;
+    let hasExplicitDurationPreference = false;
 
-    preferenceEntries.forEach((entry) => {
+    preferenceEntries.forEach(([, entry]) => {
       if (Array.isArray(entry?.days)) {
         entry.days.forEach((day) => {
-          if (dayCounts.has(day)) {
-            dayCounts.set(day, (dayCounts.get(day) ?? 0) + 1);
+          const normalized = typeof day === 'string' ? day.toLowerCase() : '';
+          if (dayCounts.has(normalized)) {
+            dayCounts.set(normalized, (dayCounts.get(normalized) ?? 0) + 1);
           }
         });
       }
       if (typeof entry?.frequency === 'number' && entry.frequency > 0) {
         frequencyTotal += entry.frequency;
         frequencyCount += 1;
+      }
+      if (typeof entry?.maxSuggestionDaysPerWeek === 'number' && entry.maxSuggestionDaysPerWeek > 0) {
+        const normalizedMax = Math.min(7, Math.max(1, Math.round(entry.maxSuggestionDaysPerWeek)));
+        explicitMaxDaysPreference = explicitMaxDaysPreference
+          ? Math.min(explicitMaxDaysPreference, normalizedMax)
+          : normalizedMax;
+      }
+      if (
+        entry?.timeWindows &&
+        typeof entry.timeWindows === 'object' &&
+        Object.keys(entry.timeWindows).length
+      ) {
+        hasExplicitTimeWindowPreference = true;
+      }
+      if (
+        [
+          entry?.minDurationMinutes,
+          entry?.maxDurationMinutes,
+          entry?.preferredDurationMinutes,
+          entry?.slotStepMinutes,
+          entry?.bufferBeforeMinutes,
+          entry?.bufferAfterMinutes,
+        ].some((value) => typeof value === 'number' && Number.isFinite(value))
+      ) {
+        hasExplicitDurationPreference = true;
       }
     });
 
@@ -496,9 +964,7 @@ const FamilyEventsScreen = () => {
       }
       return bCount - aCount;
     });
-    const filteredRankedDays = rankedDays.filter(
-      ({ key }) => (dayCounts.get(key) ?? 0) > 0
-    );
+    const filteredRankedDays = rankedDays.filter(({ key }) => (dayCounts.get(key) ?? 0) > 0);
     if (filteredRankedDays.length) {
       preferredDayOrder = filteredRankedDays.map(({ key }) => key);
     }
@@ -506,26 +972,187 @@ const FamilyEventsScreen = () => {
     const averageFrequency = frequencyCount
       ? Math.max(1, Math.round(frequencyTotal / frequencyCount))
       : 2;
-    const targetSuggestionCount = Math.min(
-      SUGGESTION_LIMIT,
-      Math.max(averageFrequency, 1) * 2
-    );
 
     const earliest = new Date(Date.now() + MIN_SUGGESTION_OFFSET_MINUTES * 60000);
+    earliest.setSeconds(0, 0);
 
-    const dayKeyByIndex = [
-      'sunday',
-      'monday',
-      'tuesday',
-      'wednesday',
-      'thursday',
-      'friday',
-      'saturday',
-    ];
+    const planningStart = new Date(earliest);
+    const planningEnd = new Date(
+      planningStart.getTime() + Math.max(SUGGESTION_LOOKAHEAD_DAYS, 7) * 2 * 24 * 60 * 60 * 1000
+    );
 
-    const generateSuggestions = (allowedDays, limit) => {
+    const allowedWeekdayCandidates = preferenceEntries
+      .map(([, entry]) => availabilityUtils.normalizeWeekdayList(entry?.days))
+      .filter((days) => Array.isArray(days) && days.length);
+
+    let allowedWeekdays = allowedWeekdayCandidates.length
+      ? allowedWeekdayCandidates.reduce(
+          (acc, days) => acc.filter((day) => days.includes(day)),
+          [...WEEKDAY_SHORT_ORDER]
+        )
+      : [...WEEKDAY_SHORT_ORDER];
+
+    if (!allowedWeekdays.length) {
+      allowedWeekdays = [...WEEKDAY_SHORT_ORDER];
+    }
+
+    const derivedMaxSuggestionDays = Math.min(
+      7,
+      explicitMaxDaysPreference ?? averageFrequency
+    );
+
+    const preferredTimeZoneFromUsers = preferenceEntries
+      .map(([, entry]) =>
+        typeof entry?.timeZone === 'string' && entry.timeZone.trim().length
+          ? entry.timeZone.trim()
+          : null
+      )
+      .find((zone) => Boolean(zone));
+
+    const resolvedTimeZone =
+      preferredTimeZoneFromUsers ??
+      (calendarEntries.find((entry) => entry?.preferences?.timeZone)?.preferences.timeZone ??
+        DEFAULT_GROUP_TIME_ZONE);
+
+    const userPreferenceMap = {};
+    preferenceEntries.forEach(([userId, entry]) => {
+      const normalizedDays = availabilityUtils.normalizeWeekdayList(entry?.days);
+      const userFrequency =
+        typeof entry?.frequency === 'number' && entry.frequency > 0
+          ? Math.min(7, Math.max(1, Math.round(entry.frequency)))
+          : null;
+      const explicitMaxDays =
+        typeof entry?.maxSuggestionDaysPerWeek === 'number' && entry.maxSuggestionDaysPerWeek > 0
+          ? Math.min(7, Math.max(1, Math.round(entry.maxSuggestionDaysPerWeek)))
+          : null;
+      const minDurationMinutes =
+        typeof entry?.minDurationMinutes === 'number' && Number.isFinite(entry.minDurationMinutes)
+          ? entry.minDurationMinutes
+          : null;
+      const maxDurationMinutes =
+        typeof entry?.maxDurationMinutes === 'number' && Number.isFinite(entry.maxDurationMinutes)
+          ? entry.maxDurationMinutes
+          : null;
+      const preferredDurationMinutes =
+        typeof entry?.preferredDurationMinutes === 'number' &&
+        Number.isFinite(entry.preferredDurationMinutes)
+          ? entry.preferredDurationMinutes
+          : null;
+      const slotStepMinutes =
+        typeof entry?.slotStepMinutes === 'number' && Number.isFinite(entry.slotStepMinutes)
+          ? entry.slotStepMinutes
+          : null;
+      const bufferBeforeMinutes =
+        typeof entry?.bufferBeforeMinutes === 'number' && Number.isFinite(entry.bufferBeforeMinutes)
+          ? entry.bufferBeforeMinutes
+          : null;
+      const bufferAfterMinutes =
+        typeof entry?.bufferAfterMinutes === 'number' && Number.isFinite(entry.bufferAfterMinutes)
+          ? entry.bufferAfterMinutes
+          : null;
+      const timeZone =
+        typeof entry?.timeZone === 'string' && entry.timeZone.trim().length ? entry.timeZone.trim() : null;
+
+      const payload = {};
+      if (normalizedDays && normalizedDays.length) {
+        payload.allowedWeekdays = normalizedDays;
+      }
+      if (explicitMaxDays) {
+        payload.maxSuggestionDaysPerWeek = explicitMaxDays;
+      } else if (userFrequency) {
+        payload.maxSuggestionDaysPerWeek = userFrequency;
+      }
+      if (entry?.timeWindows && typeof entry.timeWindows === 'object') {
+        payload.timeWindows = entry.timeWindows;
+      }
+      if (minDurationMinutes !== null) {
+        payload.minDurationMinutes = minDurationMinutes;
+      }
+      if (maxDurationMinutes !== null) {
+        payload.maxDurationMinutes = maxDurationMinutes;
+      }
+      if (preferredDurationMinutes !== null) {
+        payload.preferredDurationMinutes = preferredDurationMinutes;
+      }
+      if (slotStepMinutes !== null) {
+        payload.slotStepMinutes = slotStepMinutes;
+      }
+      if (bufferBeforeMinutes !== null) {
+        payload.bufferBeforeMinutes = bufferBeforeMinutes;
+      }
+      if (bufferAfterMinutes !== null) {
+        payload.bufferAfterMinutes = bufferAfterMinutes;
+      }
+      if (timeZone) {
+        payload.timeZone = timeZone;
+      }
+
+      if (Object.keys(payload).length) {
+        userPreferenceMap[userId] = payload;
+      }
+    });
+
+    const hasExplicitSchedulingPreferences =
+      allowedWeekdayCandidates.length > 0 ||
+      hasExplicitTimeWindowPreference ||
+      hasExplicitDurationPreference ||
+      Boolean(explicitMaxDaysPreference);
+
+    const availabilityResult = findMutualAvailability({
+      calendars: calendarEntries,
+      periodStart: planningStart,
+      periodEnd: planningEnd,
+      groupPreferences: {
+        allowedWeekdays,
+        maxSuggestionDaysPerWeek: derivedMaxSuggestionDays,
+        minDurationMinutes: MIN_EVENT_DURATION_MINUTES,
+        preferredDurationMinutes: DEFAULT_EVENT_DURATION_MINUTES,
+        timeZone: resolvedTimeZone,
+      },
+      userPreferences: userPreferenceMap,
+      globalBusyIntervals: busyRanges,
+      maxSuggestions: Math.max(SUGGESTION_LIMIT * 3, derivedMaxSuggestionDays * 4),
+      defaultSlotDurationMinutes: DEFAULT_EVENT_DURATION_MINUTES,
+    });
+
+    const candidateSlots = Array.isArray(availabilityResult.slots)
+      ? availabilityResult.slots
+      : [];
+
+    const seenKeys = new Set();
+    let suggestionsList = candidateSlots
+      .map((slot, index) => {
+        if (!(slot?.start instanceof Date) || !(slot?.end instanceof Date)) {
+          return null;
+        }
+        if (slot.start <= earliest) {
+          return null;
+        }
+        const uniqueKey = `${slot.start.getTime()}-${slot.end.getTime()}`;
+        if (seenKeys.has(uniqueKey)) {
+          return null;
+        }
+        seenKeys.add(uniqueKey);
+        return {
+          id: `${uniqueKey}-${index}`,
+          start: new Date(slot.start.getTime()),
+          end: new Date(slot.end.getTime()),
+        };
+      })
+      .filter((item) => Boolean(item));
+
+    const generateLegacySuggestions = (allowedDays, limit) => {
       const results = [];
-      const allowedSet = new Set(allowedDays);
+      const allowedSet = new Set(allowedDays.length ? allowedDays : defaultDayOrder);
+      const dayKeyByIndex = [
+        'sunday',
+        'monday',
+        'tuesday',
+        'wednesday',
+        'thursday',
+        'friday',
+        'saturday',
+      ];
 
       for (let dayOffset = 0; dayOffset < Math.max(SUGGESTION_LOOKAHEAD_DAYS, 14); dayOffset += 1) {
         if (results.length >= limit) {
@@ -557,20 +1184,23 @@ const FamilyEventsScreen = () => {
             slotStart.getTime() + DEFAULT_EVENT_DURATION_MINUTES * 60000
           );
 
-          const overlaps = ranges.some((range) => {
+          const overlaps = busyRanges.some((range) => {
             if (!(range.start instanceof Date) || !(range.end instanceof Date)) {
               return false;
             }
-
             return range.start < slotEnd && range.end > slotStart;
           });
 
           if (!overlaps) {
-            results.push({
-              id: slotStart.toISOString(),
-              start: slotStart,
-              end: slotEnd,
-            });
+            const uniqueKey = `${slotStart.getTime()}-${slotEnd.getTime()}`;
+            if (!seenKeys.has(uniqueKey)) {
+              seenKeys.add(uniqueKey);
+              results.push({
+                id: uniqueKey,
+                start: slotStart,
+                end: slotEnd,
+              });
+            }
           }
         }
       }
@@ -578,17 +1208,25 @@ const FamilyEventsScreen = () => {
       return results;
     };
 
-    let suggestionsList = generateSuggestions(preferredDayOrder, targetSuggestionCount);
+    if (!suggestionsList.length && !hasExplicitSchedulingPreferences) {
+      const allowedLegacyDays = allowedWeekdays.map(
+        (day) => SHORT_TO_FULL_DAY_KEY[day] ?? day.toLowerCase()
+      );
+      suggestionsList = generateLegacySuggestions(
+        allowedLegacyDays.length ? allowedLegacyDays : preferredDayOrder,
+        Math.max(SUGGESTION_LIMIT, derivedMaxSuggestionDays * 2)
+      );
 
-    if (!suggestionsList.length) {
-      suggestionsList = generateSuggestions(defaultDayOrder, SUGGESTION_LIMIT);
+      if (!suggestionsList.length) {
+        suggestionsList = generateLegacySuggestions(defaultDayOrder, SUGGESTION_LIMIT);
+      }
     }
 
     const nextSuggestions = suggestionsList.slice(0, SUGGESTION_LIMIT);
     setSuggestions(nextSuggestions);
     setSelectedSuggestionId(null);
     setActiveSlotId(nextSuggestions.length ? nextSuggestions[0].id : null);
-  }, [confirmedEvents, pendingEvents, familyPreferences]);
+  }, [confirmedEvents, pendingEvents, familyPreferences, calendarEntries]);
 
   useEffect(() => {
     buildSuggestions();

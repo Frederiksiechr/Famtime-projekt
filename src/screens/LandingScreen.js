@@ -37,6 +37,79 @@ const WEEK_DAYS = [
   { key: 'sunday', label: 'SÃ¸ndag' },
 ];
 
+const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
+
+const toMinutes = (value) => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  if (!TIME_PATTERN.test(trimmed)) {
+    return null;
+  }
+  const [hours, minutes] = trimmed.split(':').map((item) => Number(item));
+  return hours * 60 + minutes;
+};
+
+const extractPrimaryTimeWindow = (timeWindows = {}) => {
+  if (!timeWindows || typeof timeWindows !== 'object') {
+    return { start: '', end: '' };
+  }
+
+  const candidates = [];
+
+  if (Array.isArray(timeWindows.default) && timeWindows.default.length) {
+    candidates.push(timeWindows.default[0]);
+  }
+
+  Object.keys(timeWindows).forEach((key) => {
+    if (key === 'default') {
+      return;
+    }
+    const entry = timeWindows[key];
+    if (Array.isArray(entry) && entry.length) {
+      candidates.push(entry[0]);
+    }
+  });
+
+  const firstValid = candidates.find((candidate) => {
+    if (!candidate || typeof candidate !== 'object') {
+      return false;
+    }
+    const readStart = typeof candidate.start === 'string'
+      ? candidate.start
+      : typeof candidate.get === 'function'
+        ? candidate.get('start')
+        : null;
+    const readEnd = typeof candidate.end === 'string'
+      ? candidate.end
+      : typeof candidate.get === 'function'
+        ? candidate.get('end')
+        : null;
+    return typeof readStart === 'string' && typeof readEnd === 'string';
+  });
+
+  if (!firstValid) {
+    return { start: '', end: '' };
+  }
+
+  const readValue = (key) => {
+    if (typeof firstValid[key] === 'string') {
+      return firstValid[key];
+    }
+    if (typeof firstValid.get === 'function') {
+      const value = firstValid.get(key);
+      return typeof value === 'string' ? value : '';
+    }
+    return '';
+  };
+
+  return {
+    start: readValue('start'),
+    end: readValue('end'),
+  };
+};
+
 const hasCompletedProfile = (data) => {
   const nameFilled = typeof data.name === 'string' && data.name.trim().length > 0;
   const genderFilled = typeof data.gender === 'string' && data.gender.trim().length > 0;
@@ -68,6 +141,10 @@ const LandingScreen = ({ navigation, route }) => {
     familyRole: '',
     familyFrequency: '',
     preferredDays: [],
+    preferredTimeStart: '',
+    preferredTimeEnd: '',
+    preferredMinDuration: '',
+    preferredMaxDuration: '',
     avatarEmoji: DEFAULT_AVATAR_EMOJI,
   });
 
@@ -87,6 +164,18 @@ const LandingScreen = ({ navigation, route }) => {
         const doc = await db.collection('users').doc(userId).get();
         if (doc.exists) {
           const data = doc.data() ?? {};
+
+          const primaryTimeWindow = extractPrimaryTimeWindow(data.preferredFamilyTimeWindows);
+          const minDurationMinutes =
+            typeof data.preferredFamilyMinDurationMinutes === 'number' &&
+            !Number.isNaN(data.preferredFamilyMinDurationMinutes)
+              ? String(data.preferredFamilyMinDurationMinutes)
+              : '';
+          const maxDurationMinutes =
+            typeof data.preferredFamilyMaxDurationMinutes === 'number' &&
+            !Number.isNaN(data.preferredFamilyMaxDurationMinutes)
+              ? String(data.preferredFamilyMaxDurationMinutes)
+              : '';
 
           const hasName = typeof data.name === 'string' && data.name.trim().length > 0;
           const hasGender =
@@ -118,6 +207,16 @@ const LandingScreen = ({ navigation, route }) => {
             preferredDays: Array.isArray(data.preferredFamilyDays)
               ? data.preferredFamilyDays
               : [],
+            preferredTimeStart:
+              typeof primaryTimeWindow.start === 'string'
+                ? primaryTimeWindow.start
+                : '',
+            preferredTimeEnd:
+              typeof primaryTimeWindow.end === 'string'
+                ? primaryTimeWindow.end
+                : '',
+            preferredMinDuration: minDurationMinutes,
+            preferredMaxDuration: maxDurationMinutes,
             avatarEmoji:
               typeof data.avatarEmoji === 'string' && data.avatarEmoji.trim().length
                 ? data.avatarEmoji.trim()
@@ -195,6 +294,44 @@ const LandingScreen = ({ navigation, route }) => {
       nextErrors.gender = 'KÃ¸n skal udfyldes.';
     }
 
+    const startTime = typeof profile.preferredTimeStart === 'string' ? profile.preferredTimeStart.trim() : '';
+    const endTime = typeof profile.preferredTimeEnd === 'string' ? profile.preferredTimeEnd.trim() : '';
+
+    if ((startTime && !endTime) || (!startTime && endTime)) {
+      nextErrors.preferredTimeStart = 'Angiv både start- og sluttidspunkt.';
+      nextErrors.preferredTimeEnd = 'Angiv både start- og sluttidspunkt.';
+    } else if (startTime && endTime) {
+      if (!TIME_PATTERN.test(startTime)) {
+        nextErrors.preferredTimeStart = 'Starttid skal være i format HH:MM.';
+      }
+      if (!TIME_PATTERN.test(endTime)) {
+        nextErrors.preferredTimeEnd = 'Sluttid skal være i format HH:MM.';
+      }
+      const startMinutes = toMinutes(startTime);
+      const endMinutes = toMinutes(endTime);
+      if (startMinutes !== null && endMinutes !== null && endMinutes <= startMinutes) {
+        nextErrors.preferredTimeStart = 'Sluttid skal ligge efter starttid.';
+        nextErrors.preferredTimeEnd = 'Sluttid skal ligge efter starttid.';
+      }
+    }
+
+    const minDurationRaw = typeof profile.preferredMinDuration === 'string' ? profile.preferredMinDuration.trim() : '';
+    const maxDurationRaw = typeof profile.preferredMaxDuration === 'string' ? profile.preferredMaxDuration.trim() : '';
+    const minDurationValue = minDurationRaw ? Number(minDurationRaw) : null;
+    const maxDurationValue = maxDurationRaw ? Number(maxDurationRaw) : null;
+
+    if (minDurationRaw && (!Number.isFinite(minDurationValue) || minDurationValue <= 0)) {
+      nextErrors.preferredMinDuration = 'Min. varighed skal være et positivt tal (minutter).';
+    }
+
+    if (maxDurationRaw && (!Number.isFinite(maxDurationValue) || maxDurationValue <= 0)) {
+      nextErrors.preferredMaxDuration = 'Max. varighed skal være et positivt tal (minutter).';
+    }
+
+    if (Number.isFinite(minDurationValue) && Number.isFinite(maxDurationValue) && maxDurationValue < minDurationValue) {
+      nextErrors.preferredMaxDuration = 'Max. varighed skal være større end min. varighed.';
+    }
+
     setFieldErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   };
@@ -256,6 +393,39 @@ const LandingScreen = ({ navigation, route }) => {
           payload.preferredFamilyDays = profile.preferredDays;
         } else {
           payload.preferredFamilyDays = firebase.firestore.FieldValue.delete();
+        }
+
+        const trimmedStart = typeof profile.preferredTimeStart === 'string' ? profile.preferredTimeStart.trim() : '';
+        const trimmedEnd = typeof profile.preferredTimeEnd === 'string' ? profile.preferredTimeEnd.trim() : '';
+
+        if (trimmedStart && trimmedEnd && TIME_PATTERN.test(trimmedStart) && TIME_PATTERN.test(trimmedEnd)) {
+          const createWindowEntry = () => ({ start: trimmedStart, end: trimmedEnd });
+          const sharedWindows = { default: [createWindowEntry()] };
+          if (Array.isArray(profile.preferredDays) && profile.preferredDays.length) {
+            profile.preferredDays.forEach((dayKey) => {
+              sharedWindows[dayKey] = [createWindowEntry()];
+            });
+          }
+          payload.preferredFamilyTimeWindows = sharedWindows;
+        } else {
+          payload.preferredFamilyTimeWindows = firebase.firestore.FieldValue.delete();
+        }
+
+        const minDurationRaw = typeof profile.preferredMinDuration === 'string' ? profile.preferredMinDuration.trim() : '';
+        const maxDurationRaw = typeof profile.preferredMaxDuration === 'string' ? profile.preferredMaxDuration.trim() : '';
+        const minDurationValue = minDurationRaw ? Number(minDurationRaw) : null;
+        const maxDurationValue = maxDurationRaw ? Number(maxDurationRaw) : null;
+
+        if (Number.isFinite(minDurationValue) && minDurationValue > 0) {
+          payload.preferredFamilyMinDurationMinutes = minDurationValue;
+        } else {
+          payload.preferredFamilyMinDurationMinutes = firebase.firestore.FieldValue.delete();
+        }
+
+        if (Number.isFinite(maxDurationValue) && maxDurationValue > 0) {
+          payload.preferredFamilyMaxDurationMinutes = maxDurationValue;
+        } else {
+          payload.preferredFamilyMaxDurationMinutes = firebase.firestore.FieldValue.delete();
         }
 
         await db.collection('users').doc(userId).set(payload, { merge: true });
@@ -500,6 +670,54 @@ const LandingScreen = ({ navigation, route }) => {
                 </View>
                 <Text style={styles.preferenceFootnote}>
                   Valgte dage bruges til forslag i &quot;Familiebegivenheder&quot;.
+                </Text>
+
+                <Text style={styles.preferenceSubtitle}>Foretrukket tidsrum</Text>
+                <Text style={styles.preferenceFootnote}>
+                  Udfyld start og slut for at begrænse forslag til et bestemt tidsrum.
+                </Text>
+                <FormInput
+                  label="Starttid (HH:MM)"
+                  value={profile.preferredTimeStart}
+                  onChangeText={updateField('preferredTimeStart')}
+                  placeholder="Fx 09:00"
+                  keyboardType="numbers-and-punctuation"
+                  autoCapitalize="none"
+                  error={fieldErrors.preferredTimeStart}
+                  style={styles.field}
+                />
+                <FormInput
+                  label="Sluttid (HH:MM)"
+                  value={profile.preferredTimeEnd}
+                  onChangeText={updateField('preferredTimeEnd')}
+                  placeholder="Fx 16:30"
+                  keyboardType="numbers-and-punctuation"
+                  autoCapitalize="none"
+                  error={fieldErrors.preferredTimeEnd}
+                  style={styles.field}
+                />
+                <FormInput
+                  label="Min. varighed (minutter, valgfrit)"
+                  value={profile.preferredMinDuration}
+                  onChangeText={updateField('preferredMinDuration')}
+                  keyboardType="number-pad"
+                  placeholder="Fx 45"
+                  autoCapitalize="none"
+                  error={fieldErrors.preferredMinDuration}
+                  style={styles.field}
+                />
+                <FormInput
+                  label="Max. varighed (minutter, valgfrit)"
+                  value={profile.preferredMaxDuration}
+                  onChangeText={updateField('preferredMaxDuration')}
+                  keyboardType="number-pad"
+                  placeholder="Fx 90"
+                  autoCapitalize="none"
+                  error={fieldErrors.preferredMaxDuration}
+                  style={styles.field}
+                />
+                <Text style={styles.preferenceFootnote}>
+                  Lad felterne stå tomme, hvis I er fleksible med både tidsrum og varighed.
                 </Text>
 
                 <Button
