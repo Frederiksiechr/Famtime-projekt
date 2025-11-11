@@ -12,8 +12,8 @@ import {
   ActivityIndicator,
   ScrollView,
   Pressable,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 
 import Button from '../components/Button';
 import FormInput from '../components/FormInput';
@@ -298,14 +298,14 @@ const LandingScreen = ({ navigation, route }) => {
     const endTime = typeof profile.preferredTimeEnd === 'string' ? profile.preferredTimeEnd.trim() : '';
 
     if ((startTime && !endTime) || (!startTime && endTime)) {
-      nextErrors.preferredTimeStart = 'Angiv både start- og sluttidspunkt.';
-      nextErrors.preferredTimeEnd = 'Angiv både start- og sluttidspunkt.';
+      nextErrors.preferredTimeStart = 'Angiv bde start- og sluttidspunkt.';
+      nextErrors.preferredTimeEnd = 'Angiv bde start- og sluttidspunkt.';
     } else if (startTime && endTime) {
       if (!TIME_PATTERN.test(startTime)) {
-        nextErrors.preferredTimeStart = 'Starttid skal være i format HH:MM.';
+        nextErrors.preferredTimeStart = 'Starttid skal vre i format HH:MM.';
       }
       if (!TIME_PATTERN.test(endTime)) {
-        nextErrors.preferredTimeEnd = 'Sluttid skal være i format HH:MM.';
+        nextErrors.preferredTimeEnd = 'Sluttid skal vre i format HH:MM.';
       }
       const startMinutes = toMinutes(startTime);
       const endMinutes = toMinutes(endTime);
@@ -321,15 +321,15 @@ const LandingScreen = ({ navigation, route }) => {
     const maxDurationValue = maxDurationRaw ? Number(maxDurationRaw) : null;
 
     if (minDurationRaw && (!Number.isFinite(minDurationValue) || minDurationValue <= 0)) {
-      nextErrors.preferredMinDuration = 'Min. varighed skal være et positivt tal (minutter).';
+      nextErrors.preferredMinDuration = 'Min. varighed skal vre et positivt tal (minutter).';
     }
 
     if (maxDurationRaw && (!Number.isFinite(maxDurationValue) || maxDurationValue <= 0)) {
-      nextErrors.preferredMaxDuration = 'Max. varighed skal være et positivt tal (minutter).';
+      nextErrors.preferredMaxDuration = 'Max. varighed skal vre et positivt tal (minutter).';
     }
 
     if (Number.isFinite(minDurationValue) && Number.isFinite(maxDurationValue) && maxDurationValue < minDurationValue) {
-      nextErrors.preferredMaxDuration = 'Max. varighed skal være større end min. varighed.';
+      nextErrors.preferredMaxDuration = 'Max. varighed skal vre strre end min. varighed.';
     }
 
     setFieldErrors(nextErrors);
@@ -674,7 +674,7 @@ const LandingScreen = ({ navigation, route }) => {
 
                 <Text style={styles.preferenceSubtitle}>Foretrukket tidsrum</Text>
                 <Text style={styles.preferenceFootnote}>
-                  Udfyld start og slut for at begrænse forslag til et bestemt tidsrum.
+                  Udfyld start og slut for at begrnse forslag til et bestemt tidsrum.
                 </Text>
                 <FormInput
                   label="Starttid (HH:MM)"
@@ -717,7 +717,7 @@ const LandingScreen = ({ navigation, route }) => {
                   style={styles.field}
                 />
                 <Text style={styles.preferenceFootnote}>
-                  Lad felterne stå tomme, hvis I er fleksible med både tidsrum og varighed.
+                  Lad felterne st tomme, hvis I er fleksible med bde tidsrum og varighed.
                 </Text>
 
                 <Button
@@ -734,7 +734,7 @@ const LandingScreen = ({ navigation, route }) => {
             <View style={[styles.card, styles.familyCard]}>
               <Text style={styles.cardTitle}>Din familie</Text>
               <Text style={styles.cardSubtitle}>
-                Få hurtig adgang til delte oplysninger og del familie ID med andre.
+                F hurtig adgang til delte oplysninger og del familie ID med andre.
               </Text>
 
               <Text style={styles.familyInfoText}>

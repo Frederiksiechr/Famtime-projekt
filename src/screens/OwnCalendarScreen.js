@@ -17,8 +17,8 @@ import {
   Pressable,
   Platform,
   KeyboardAvoidingView,
-  SafeAreaView,
 } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 import Button from '../components/Button';
