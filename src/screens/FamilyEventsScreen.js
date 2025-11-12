@@ -16,6 +16,7 @@ import {
   Alert,
   Platform,
   KeyboardAvoidingView,
+  AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import * as Calendar from 'expo-calendar';
@@ -37,6 +38,7 @@ const MIN_EVENT_DURATION_MINUTES = 15;
 const SUGGESTION_LOOKAHEAD_DAYS = 7;
 const SUGGESTION_LIMIT = 6;
 const SUGGESTION_HOURS = [9, 12, 15, 18];
+const DEVICE_BUSY_POLL_INTERVAL_MS = 10 * 1000;
 const MIN_SUGGESTION_OFFSET_MINUTES = 60;
 const CALENDAR_DEVICE_LOOKAHEAD_DAYS = 21;
 const DEFAULT_GROUP_TIME_ZONE = 'Europe/Copenhagen';
@@ -366,7 +368,13 @@ const FamilyEventsScreen = () => {
   const [moodDraftTitle, setMoodDraftTitle] = useState('');
   const [moodDraftDescription, setMoodDraftDescription] = useState('');
   const [moodPreview, setMoodPreview] = useState(null);
+  const [deviceBusyRefreshToken, setDeviceBusyRefreshToken] = useState(0);
+  const [deviceBusySyncVersion, setDeviceBusySyncVersion] = useState(0);
   const deviceBusyLoadedRef = useRef('');
+  const requestDeviceBusyRefresh = useCallback(() => {
+    setDeviceBusyRefreshToken((token) => token + 1);
+  }, []);
+  const appStateRef = useRef(AppState.currentState);
   const shouldShowStatusCard =
     Boolean(error) || Boolean(actionStatus) || Boolean(infoMessage) || loading;
 
@@ -439,6 +447,35 @@ const FamilyEventsScreen = () => {
     const index = sortedSuggestions.findIndex((item) => item.id === activeSuggestion.id);
     return `Forslag ${index + 1} af ${sortedSuggestions.length}`;
   }, [sortedSuggestions, activeSuggestion]);
+
+  useEffect(() => {
+    const handleAppStateChange = (nextState) => {
+      if (appStateRef.current !== 'active' && nextState === 'active') {
+        requestDeviceBusyRefresh();
+      }
+      appStateRef.current = nextState;
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      if (subscription && typeof subscription.remove === 'function') {
+        subscription.remove();
+      } else {
+        AppState.removeEventListener('change', handleAppStateChange);
+      }
+    };
+  }, [requestDeviceBusyRefresh]);
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      requestDeviceBusyRefresh();
+    }, DEVICE_BUSY_POLL_INTERVAL_MS);
+
+    return () => {
+      clearInterval(intervalId);
+    };
+  }, [requestDeviceBusyRefresh]);
 
   const moodCards = useMemo(() => {
     const baseCards = MOOD_OPTIONS.map((option) => {
@@ -693,7 +730,7 @@ const FamilyEventsScreen = () => {
     }
 
     const idsKey = calendarContext.calendarIds.slice().sort().join('|');
-    const loadKey = `${currentUserId}:${idsKey}`;
+    const loadKey = `${currentUserId}:${idsKey}:${deviceBusyRefreshToken}`;
 
     if (deviceBusyLoadedRef.current === loadKey) {
       return undefined;
@@ -761,6 +798,7 @@ const FamilyEventsScreen = () => {
           };
         });
 
+        setDeviceBusySyncVersion((version) => version + 1);
         deviceBusyLoadedRef.current = loadKey;
       } catch (error) {
         console.warn('[FamilyEvents] loadDeviceCalendarBusy', error);
@@ -772,7 +810,7 @@ const FamilyEventsScreen = () => {
     return () => {
       cancelled = true;
     };
-  }, [calendarContext.ready, calendarContext.calendarIds, currentUserId]);
+  }, [calendarContext.ready, calendarContext.calendarIds, currentUserId, deviceBusyRefreshToken]);
 
   const calendarEntries = useMemo(() => {
     const memberIds = Array.isArray(familyMembers)
@@ -1226,7 +1264,7 @@ const FamilyEventsScreen = () => {
     setSuggestions(nextSuggestions);
     setSelectedSuggestionId(null);
     setActiveSlotId(nextSuggestions.length ? nextSuggestions[0].id : null);
-  }, [confirmedEvents, pendingEvents, familyPreferences, calendarEntries]);
+  }, [confirmedEvents, pendingEvents, familyPreferences, calendarEntries, deviceBusySyncVersion]);
 
   useEffect(() => {
     buildSuggestions();
@@ -1545,6 +1583,7 @@ const initializeCalendarContext = useCallback(
       );
 
       handleCloseForm();
+      requestDeviceBusyRefresh();
       return true;
     } catch (_submitError) {
       setFormError(
@@ -1747,6 +1786,7 @@ const initializeCalendarContext = useCallback(
           return;
         }
 
+        let deviceCalendarChanged = false;
         const confirmed = confirmedEvents.filter(
           (event) => event.status === 'confirmed'
         );
@@ -1792,6 +1832,7 @@ const initializeCalendarContext = useCallback(
 
             try {
               await Calendar.updateEventAsync(existingEntry.calendarEventId, eventDetails);
+              deviceCalendarChanged = true;
               updatedEntry = {
                 calendarEventId: existingEntry.calendarEventId,
                 signature,
@@ -1812,6 +1853,7 @@ const initializeCalendarContext = useCallback(
               }
 
               if (recreatedId) {
+                deviceCalendarChanged = true;
                 updatedEntry = {
                   calendarEventId: recreatedId,
                   signature,
@@ -1842,6 +1884,7 @@ const initializeCalendarContext = useCallback(
                 calendarContext.primaryCalendarId,
                 eventDetails
               );
+              deviceCalendarChanged = true;
               refs[event.id] = {
                 calendarEventId,
                 signature,
@@ -1858,6 +1901,7 @@ const initializeCalendarContext = useCallback(
             if (entry?.calendarEventId) {
               try {
                 await Calendar.deleteEventAsync(entry.calendarEventId);
+                deviceCalendarChanged = true;
               } catch (deleteError) {
                 console.warn('[FamilyEvents] deleteEventAsync failed', deleteError);
               }
@@ -1877,6 +1921,10 @@ const initializeCalendarContext = useCallback(
         }
 
         familyCalendarRefsRef.current = refs;
+
+        if (deviceCalendarChanged) {
+          requestDeviceBusyRefresh();
+        }
       } catch (syncError) {
         console.warn('[FamilyEvents] syncConfirmedEventsWithCalendar', syncError);
       } finally {
@@ -1892,6 +1940,7 @@ const initializeCalendarContext = useCallback(
     calendarContext.ready,
     familyId,
     eventsLoaded,
+    requestDeviceBusyRefresh,
   ]);
 
   const renderEventFormModal = () => (
