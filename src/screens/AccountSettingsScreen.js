@@ -128,6 +128,7 @@ const AccountSettingsScreen = ({ navigation }) => {
   const [actionError, setActionError] = useState('');
   const [acceptingIds, setAcceptingIds] = useState([]);
   const [leavingFamily, setLeavingFamily] = useState(false);
+  const [deletingProfile, setDeletingProfile] = useState(false);
   const [removingMemberIds, setRemovingMemberIds] = useState([]);
 
   const currentUser = auth.currentUser;
@@ -476,7 +477,7 @@ const AccountSettingsScreen = ({ navigation }) => {
 
   const handleLeaveFamily = async (nextOwnerMember = null) => {
     if (!family?.id || !currentUser) {
-      return;
+      return false;
     }
 
     try {
@@ -562,8 +563,10 @@ const AccountSettingsScreen = ({ navigation }) => {
         prev ? { ...prev, familyId: '', familyRole: '' } : prev
       );
       setStatusMessage('Du har forladt familien.');
+      return true;
     } catch (_leaveError) {
       setActionError('Kunne ikke forlade familien. Prøv igen.');
+      return false;
     } finally {
       setLeavingFamily(false);
     }
@@ -647,6 +650,136 @@ const AccountSettingsScreen = ({ navigation }) => {
       setActionError('Kunne ikke fjerne medlemmet. Prøv igen.');
     } finally {
       setRemovingMemberIds((prev) => prev.filter((id) => id !== member.userId));
+    }
+  };
+
+  const confirmDeleteProfile = () => {
+    if (!currentUser || deletingProfile) {
+      return;
+    }
+
+    const promptDeleteApproval = (nextOwnerMember = null) => {
+      Alert.alert(
+        'Slet profil',
+        'Er du sikker på at du vil slette din profil?',
+        [
+          { text: 'Nej', style: 'cancel' },
+          {
+            text: 'Ja',
+            style: 'destructive',
+            onPress: () => handleDeleteProfile(nextOwnerMember),
+          },
+        ]
+      );
+    };
+
+    if (family?.id && canCurrentUserManageFamily()) {
+      const memberOptions = (family.members || []).filter(
+        (member) => member.userId && member.userId !== currentUser.uid
+      );
+
+      if (memberOptions.length) {
+        const memberChoices = memberOptions.map(
+          (member) => member.displayName || member.name || member.email || 'Familiemedlem'
+        );
+
+        Alert.alert(
+          'Overdrag administrator',
+          'Vælg hvem der skal være administrator, før du sletter din profil.',
+          [
+            { text: 'Annuller', style: 'cancel' },
+            ...memberChoices.map((label, index) => ({
+              text: label,
+              onPress: () => promptDeleteApproval(memberOptions[index]),
+            })),
+          ]
+        );
+        return;
+      }
+    }
+
+    promptDeleteApproval();
+  };
+
+  const handleDeleteProfile = async (nextOwnerMember = null) => {
+    if (!currentUser) {
+      setActionError('Ingen aktiv bruger fundet. Log ind igen.');
+      return;
+    }
+
+    try {
+      setDeletingProfile(true);
+      setActionError('');
+      setStatusMessage('');
+
+      if (family?.id) {
+        const leftSuccessfully = await handleLeaveFamily(nextOwnerMember);
+        if (!leftSuccessfully) {
+          return;
+        }
+      }
+
+      const userDocRef = db.collection('users').doc(currentUser.uid);
+      const calendarDocRef = db.collection('calendar').doc(currentUser.uid);
+      const [userSnapshot, calendarSnapshot] = await Promise.all([
+        userDocRef.get(),
+        calendarDocRef.get(),
+      ]);
+      const userBackup = userSnapshot.exists ? userSnapshot.data() : null;
+      const calendarBackup = calendarSnapshot.exists ? calendarSnapshot.data() : null;
+
+      if (calendarSnapshot.exists) {
+        await calendarDocRef.delete();
+      }
+      if (userSnapshot.exists) {
+        await userDocRef.delete();
+      }
+
+      const activeUser = auth.currentUser;
+      if (!activeUser) {
+        setStatusMessage('Din profil er slettet. Du logges nu ud.');
+        await auth.signOut().catch(() => {});
+        return;
+      }
+
+      try {
+        await activeUser.delete();
+      } catch (authError) {
+        if (userBackup) {
+          try {
+            await userDocRef.set(userBackup);
+          } catch (_restoreUserError) {
+            // ignore restore issues
+          }
+        }
+        if (calendarBackup) {
+          try {
+            await calendarDocRef.set(calendarBackup);
+          } catch (_restoreCalendarError) {
+            // ignore restore issues
+          }
+        }
+
+        const message =
+          typeof authError?.message === 'string' ? authError.message : '';
+        if (
+          authError?.code === 'auth/requires-recent-login' ||
+          message.includes('requires-recent-login')
+        ) {
+          setActionError(
+            'Af sikkerhedshensyn skal du logge ind igen, før du kan slette din profil.'
+          );
+          return;
+        }
+        throw authError;
+      }
+
+      setStatusMessage('Din profil er slettet. Du logges nu ud.');
+      await auth.signOut().catch(() => {});
+    } catch (_deleteError) {
+      setActionError('Kunne ikke slette din profil. Prøv igen.');
+    } finally {
+      setDeletingProfile(false);
     }
   };
 
@@ -862,8 +995,16 @@ const AccountSettingsScreen = ({ navigation }) => {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Generelt</Text>
           <Button
+            title="Slet profil"
+            onPress={confirmDeleteProfile}
+            loading={deletingProfile}
+            disabled={deletingProfile || leavingFamily}
+            style={styles.deleteProfileButton}
+          />
+          <Button
             title="Log ud af FamTime"
             onPress={handleLogout}
+            disabled={deletingProfile}
             style={styles.logoutButton}
           />
         </View>
@@ -999,6 +1140,10 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     marginTop: spacing.md,
+  },
+  deleteProfileButton: {
+    marginTop: spacing.md,
+    backgroundColor: colors.error,
   },
   logoutButton: {
     marginTop: spacing.md,
