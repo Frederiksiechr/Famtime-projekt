@@ -49,18 +49,73 @@ const nouns = [
   'havørn',
 ];
 
+const stripDiacritics = (value) => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  if (typeof value.normalize === 'function') {
+    return value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+  }
+  return value;
+};
+
+const normalizeFamilyCode = (value) => {
+  if (typeof value !== 'string') {
+    return '';
+  }
+  const trimmed = value.trim().toLowerCase();
+  if (!trimmed) {
+    return '';
+  }
+  const noDiacritics = stripDiacritics(trimmed);
+  const sanitized = noDiacritics.replace(/[^a-z0-9-]/g, '-');
+  return sanitized.replace(/-+/g, '-').replace(/^-|-$/g, '');
+};
+
+const buildFamilyCodeCandidates = (value) => {
+  if (typeof value !== 'string') {
+    return [];
+  }
+
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return [];
+  }
+
+  const lower = trimmed.toLowerCase();
+  const noDiacritics = stripDiacritics(lower);
+  const sanitized = noDiacritics.replace(/[^a-z0-9-]/g, '-');
+  const collapsed = sanitized.replace(/-+/g, '-').replace(/^-|-$/g, '');
+
+  const candidates = [trimmed, lower, noDiacritics, sanitized, collapsed];
+  const unique = [];
+
+  candidates.forEach((candidate) => {
+    if (typeof candidate !== 'string') {
+      return;
+    }
+    const normalized = candidate.trim();
+    if (normalized && !unique.includes(normalized)) {
+      unique.push(normalized);
+    }
+  });
+
+  return unique;
+};
+
 const generateFamilyCode = async () => {
   // Finder et menneskeligt læsbart familie-ID og sikrer, at det er unikt i Firestore.
   const attempts = 40;
   for (let i = 0; i < attempts; i += 1) {
     const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
     const noun = nouns[Math.floor(Math.random() * nouns.length)];
-    const code = `${adjective}-${noun}`.toLowerCase();
-    // Undgå potentielle mellemrum
-    const sanitizedCode = code.replace(/[^a-z0-9-]/g, '-');
-    const existingDoc = await db.collection('families').doc(sanitizedCode).get();
+    const candidate = normalizeFamilyCode(`${adjective}-${noun}`);
+    if (!candidate) {
+      continue;
+    }
+    const existingDoc = await db.collection('families').doc(candidate).get();
     if (!existingDoc.exists) {
-      return sanitizedCode;
+      return candidate;
     }
   }
 
@@ -210,8 +265,9 @@ const FamilySetupScreen = ({ navigation }) => {
       setError('');
       setStatusMessage('');
 
-      const familyCode = await generateFamilyCode();
-      const familyRef = db.collection('families').doc(familyCode);
+      const generatedFamilyCode = await generateFamilyCode();
+      const familyRef = db.collection('families').doc(generatedFamilyCode);
+      const codeVariants = buildFamilyCodeCandidates(familyRef.id);
       const { resolvedMembers, pendingInvites, conflicts } =
         await resolveInvitees(familyRef.id);
 
@@ -226,6 +282,7 @@ const FamilySetupScreen = ({ navigation }) => {
         ownerEmail: userEmail.toLowerCase(),
         members,
         pendingInvites,
+        codeVariants: codeVariants.length ? codeVariants : [familyRef.id],
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
       });
 
@@ -250,7 +307,7 @@ const FamilySetupScreen = ({ navigation }) => {
       );
 
       setExistingFamily({
-        id: familyCode,
+        id: generatedFamilyCode,
         name: trimmedName,
         ownerId: userId,
         ownerEmail: userEmail.toLowerCase(),
@@ -260,10 +317,10 @@ const FamilySetupScreen = ({ navigation }) => {
 
       setStatusMessage(
         conflicts.length
-          ? `Familien er oprettet med ID ${familyCode}. Følgende e-mails kunne ikke knyttes automatisk: ${conflicts.join(
+          ? `Familien er oprettet med ID ${generatedFamilyCode}. Følgende e-mails kunne ikke knyttes automatisk: ${conflicts.join(
               ', '
             )}.`
-          : `Familien er oprettet og dine medlemmer er tilføjet. Del familie ID'et ${familyCode} med dine familiemedlemmer.`
+          : `Familien er oprettet og dine medlemmer er tilføjet. Del familie ID'et ${generatedFamilyCode} med dine familiemedlemmer.`
       );
       setInvitedEmails([]);
       setFamilyName('');
@@ -293,10 +350,26 @@ const FamilySetupScreen = ({ navigation }) => {
       setError('');
       setStatusMessage('');
 
-      const familyRef = db.collection('families').doc(trimmedCode);
-      const familyDoc = await familyRef.get();
+      const codeCandidates = buildFamilyCodeCandidates(trimmedCode);
+      if (!codeCandidates.length) {
+        setError('Der findes ingen familie med den kode.');
+        return;
+      }
 
-      if (!familyDoc.exists) {
+      let familyRef = null;
+      let familyDoc = null;
+
+      for (let i = 0; i < codeCandidates.length; i += 1) {
+        const candidateRef = db.collection('families').doc(codeCandidates[i]);
+        const candidateDoc = await candidateRef.get();
+        if (candidateDoc.exists) {
+          familyRef = candidateRef;
+          familyDoc = candidateDoc;
+          break;
+        }
+      }
+
+      if (!familyDoc || !familyRef) {
         setError('Der findes ingen familie med den kode.');
         return;
       }
@@ -306,21 +379,56 @@ const FamilySetupScreen = ({ navigation }) => {
         ? [...familyData.members]
         : [];
 
-      const alreadyMember = members.some((member) => member.userId === userId);
+      const normalizedUserEmail =
+        typeof userEmail === 'string' ? userEmail.trim().toLowerCase() : '';
 
-      if (!alreadyMember) {
-        members.push({
-          userId,
-          email: userEmail.toLowerCase(),
-          role: 'member',
+      const alreadyMemberIndex = members.findIndex(
+        (member) => member?.userId === userId
+      );
+      const alreadyMember = alreadyMemberIndex !== -1;
+
+      if (alreadyMember) {
+        const existingMember = members[alreadyMemberIndex] ?? {};
+        await db
+          .collection('users')
+          .doc(userId)
+          .set(
+            {
+              familyId: familyDoc.id,
+              familyRole:
+                typeof existingMember?.role === 'string'
+                  ? existingMember.role
+                  : 'member',
+            },
+            { merge: true }
+          );
+
+        setExistingFamily({
+          id: familyDoc.id,
+          ...familyData,
+          members,
         });
+        setStatusMessage('Du er allerede tilknyttet denne familie.');
+        setFamilyCode('');
+        return;
       }
 
-      const pendingInvites = Array.isArray(familyData.pendingInvites)
-        ? familyData.pendingInvites.filter(
-            (email) => email.toLowerCase() !== userEmail.toLowerCase()
-          )
+      members.push({
+        userId,
+        email: normalizedUserEmail,
+        role: 'member',
+      });
+
+      const pendingInvitesSource = Array.isArray(familyData.pendingInvites)
+        ? familyData.pendingInvites
         : [];
+      const pendingInvites = normalizedUserEmail
+        ? pendingInvitesSource.filter(
+            (email) =>
+              typeof email === 'string' &&
+              email.toLowerCase() !== normalizedUserEmail
+          )
+        : pendingInvitesSource;
 
       await familyRef.update({
         members,
@@ -344,8 +452,20 @@ const FamilySetupScreen = ({ navigation }) => {
       });
       setStatusMessage('Du er nu en del af familien.');
       setFamilyCode('');
-    } catch (_error) {
-      setError('Kunne ikke tilslutte familien. Prøv igen.');
+    } catch (joinError) {
+      const rawMessage =
+        typeof joinError?.message === 'string' ? joinError.message.trim() : '';
+      const baseMessage = rawMessage.length
+        ? rawMessage
+        : 'Kunne ikke tilslutte familien. Prøv igen.';
+
+      if (baseMessage.includes('Missing or insufficient permissions')) {
+        setError(
+          'Manglende tilladelser i Firestore. Kontakt administratoren eller prøv igen senere.'
+        );
+      } else {
+        setError(baseMessage);
+      }
     } finally {
       setLoading(false);
     }

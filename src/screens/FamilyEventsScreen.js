@@ -1246,7 +1246,7 @@ const FamilyEventsScreen = () => {
       return results;
     };
 
-    if (!suggestionsList.length && !hasExplicitSchedulingPreferences) {
+    if (!suggestionsList.length) {
       const allowedLegacyDays = allowedWeekdays.map(
         (day) => SHORT_TO_FULL_DAY_KEY[day] ?? day.toLowerCase()
       );
@@ -1398,17 +1398,6 @@ const initializeCalendarContext = useCallback(
         const calendarDoc = await calendarRef.get();
         const calendarData = calendarDoc.data() ?? {};
 
-        if (!calendarDoc.exists || !calendarData.synced) {
-          setCalendarContext({
-            ready: false,
-            docRef: calendarRef,
-            primaryCalendarId: null,
-            calendarIds: [],
-          });
-          familyCalendarRefsRef.current = {};
-          return;
-        }
-
         const calendarIdsSet = new Set();
         const appendIds = (values) => {
           (values ?? []).forEach((value) => {
@@ -1426,11 +1415,13 @@ const initializeCalendarContext = useCallback(
           appendIds([calendarData.calendarId]);
         }
 
-        if (!calendarIdsSet.size) {
+        let fetchedDeviceCalendars = false;
+        if (calendarIdsSet.size === 0) {
           const deviceCalendars = await Calendar.getCalendarsAsync(
             Calendar.EntityTypes.EVENT
           );
           appendIds(deviceCalendars.map((calendar) => calendar?.id).filter(Boolean));
+          fetchedDeviceCalendars = true;
         }
 
         const calendarIds = Array.from(calendarIdsSet);
@@ -1450,23 +1441,35 @@ const initializeCalendarContext = useCallback(
           calendarIds,
         });
 
-        const shouldPersistIds = Boolean(
+        const shouldPersistCalendarMeta =
           calendarIds.length &&
-            (!Array.isArray(calendarData.calendarIds) ||
-              calendarData.calendarIds.length !== calendarIds.length ||
-              calendarData.calendarIds.some((id) => !calendarIdsSet.has(id)) ||
-              calendarData.calendarId !== primaryCalendarId)
-        );
+          (fetchedDeviceCalendars ||
+            !Array.isArray(calendarData.calendarIds) ||
+            calendarData.calendarIds.length !== calendarIds.length ||
+            calendarData.calendarIds.some((id) => !calendarIdsSet.has(id)) ||
+            calendarData.calendarId !== primaryCalendarId ||
+            calendarData.synced !== true);
 
-        if (shouldPersistIds) {
+        if (shouldPersistCalendarMeta) {
           await calendarRef.set(
             {
+              synced: Boolean(primaryCalendarId),
               calendarIds,
-              calendarId: primaryCalendarId,
+              calendarId: primaryCalendarId ?? null,
               updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
             },
             { merge: true }
           );
+        }
+
+        if (!primaryCalendarId) {
+          setCalendarContext({
+            ready: false,
+            docRef: calendarRef,
+            primaryCalendarId: null,
+            calendarIds: [],
+          });
+          return;
         }
       } catch (calendarError) {
         console.warn('[FamilyEvents] initializeCalendarContext', calendarError);
