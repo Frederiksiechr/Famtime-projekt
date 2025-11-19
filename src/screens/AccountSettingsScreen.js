@@ -261,6 +261,7 @@ const AccountSettingsScreen = ({ navigation }) => {
                   ? data.pendingInvites
                   : [],
                 ownerEmail: data.ownerEmail ?? '',
+                ownerId: data.ownerId ?? '',
               });
             });
         } else {
@@ -369,7 +370,8 @@ const AccountSettingsScreen = ({ navigation }) => {
 
       const pendingInvites = Array.isArray(familyData.pendingInvites)
         ? familyData.pendingInvites.filter(
-            (email) => email.toLowerCase() !== userEmailLower
+            (email) =>
+              typeof email === 'string' && email.toLowerCase() !== userEmailLower
           )
         : [];
 
@@ -404,8 +406,61 @@ const AccountSettingsScreen = ({ navigation }) => {
     navigation.navigate('FamilySetup');
   };
 
+  const determineRoleLabel = (role) => {
+    if (typeof role !== 'string') {
+      return 'Medlem';
+    }
+    const normalized = role.trim().toLowerCase();
+    if (normalized === 'owner' || normalized === 'admin') {
+      return 'Administrator';
+    }
+    return 'Medlem';
+  };
+
+  const canCurrentUserManageFamily = () => {
+    const currentRole = determineRoleLabel(userProfile?.familyRole);
+    if (currentRole !== 'Administrator') {
+      return false;
+    }
+    const ownerEmailLower = typeof family?.ownerEmail === 'string' ? family.ownerEmail.toLowerCase() : '';
+    if (ownerEmailLower && ownerEmailLower !== userEmailLower) {
+      return false;
+    }
+    return true;
+  };
+
+  const prepareOwnerTransfer = (member) => {
+    if (!member || !member.userId) {
+      return;
+    }
+    handleLeaveFamily(member);
+  };
+
   const confirmLeaveFamily = () => {
     if (!family?.id || !currentUser) {
+      return;
+    }
+
+    const isOwner = canCurrentUserManageFamily();
+    const memberOptions = (family.members || []).filter(
+      (member) => member.userId && member.userId !== currentUser.uid
+    );
+
+    if (isOwner && memberOptions.length) {
+      const memberChoices = memberOptions
+        .map((member) => member.displayName || member.name || member.email || 'Familiemedlem');
+
+      Alert.alert(
+        'Overdrag administrator',
+        'Vælg hvem der skal være administrator, før du forlader familien.',
+        [
+          { text: 'Annuller', style: 'cancel' },
+          ...memberChoices.map((label, index) => ({
+            text: label,
+            onPress: () => prepareOwnerTransfer(memberOptions[index]),
+          })),
+        ]
+      );
       return;
     }
 
@@ -414,16 +469,12 @@ const AccountSettingsScreen = ({ navigation }) => {
       'Er du sikker på, at du vil forlade familien? Du mister adgangen til familieevents.',
       [
         { text: 'Annuller', style: 'cancel' },
-        {
-          text: 'Forlad',
-          style: 'destructive',
-          onPress: handleLeaveFamily,
-        },
+        { text: 'Forlad', style: 'destructive', onPress: () => handleLeaveFamily() },
       ]
     );
   };
 
-  const handleLeaveFamily = async () => {
+  const handleLeaveFamily = async (nextOwnerMember = null) => {
     if (!family?.id || !currentUser) {
       return;
     }
@@ -452,7 +503,21 @@ const AccountSettingsScreen = ({ navigation }) => {
         };
 
         if (data.ownerId === currentUser.uid) {
-          if (members.length > 0) {
+          if (nextOwnerMember && nextOwnerMember.userId) {
+            const ownerIndex = members.findIndex((member) => member.userId === nextOwnerMember.userId);
+            if (ownerIndex !== -1) {
+              members[ownerIndex] = {
+                ...members[ownerIndex],
+                role: 'admin',
+              };
+              updates.members = members;
+              updates.ownerId = nextOwnerMember.userId;
+              updates.ownerEmail =
+                typeof members[ownerIndex].email === 'string'
+                  ? members[ownerIndex].email
+                  : nextOwnerMember.email ?? '';
+            }
+          } else if (members.length > 0) {
             const nextAdmin = {
               ...members[0],
               role: 'admin',
@@ -742,7 +807,6 @@ const AccountSettingsScreen = ({ navigation }) => {
                         : typeof member?.email === 'string' && member.email.trim().length
                           ? member.email.trim()
                           : 'Familiemedlem';
-
                   return (
                     <View
                       key={`${member.userId}-${member.email}`}
@@ -752,15 +816,6 @@ const AccountSettingsScreen = ({ navigation }) => {
                         {memberEmoji} {memberName}{' '}
                         {member.role === 'admin' ? '(Administrator)' : '(Medlem)'}
                       </Text>
-                      {userProfile?.familyRole === 'admin' &&
-                      member.userId !== currentUser?.uid ? (
-                        <Button
-                          title="Fjern"
-                          onPress={() => handleRemoveMember(member)}
-                          loading={removingMemberIds.includes(member.userId)}
-                          style={styles.memberRemoveButton}
-                        />
-                      ) : null}
                     </View>
                   );
                 })
@@ -910,10 +965,6 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     gap: spacing.sm,
     marginBottom: spacing.xs,
-  },
-  memberRemoveButton: {
-    backgroundColor: colors.error,
-    minWidth: 110,
   },
   pendingText: {
     fontSize: fontSizes.sm,
