@@ -47,24 +47,56 @@ const WEEKDAY_ACTIVITIES = [
     label: 'Kaffemøde & gåtur',
     detail: '(45–60 minutter, uformelt)',
     tone: 'adult',
+    moods: ['balanced', 'relaxed'],
   },
   {
     key: 'boardgames_tea',
     label: 'Brætspil & te',
     detail: '(hyggeligt og afslappet)',
     tone: 'neutral',
+    moods: ['balanced', 'relaxed', 'creative'],
   },
   {
     key: 'museum_short',
     label: 'Museumsbesøg (kort)',
     detail: '(kulturpause på 1–2 timer)',
     tone: 'adult',
+    moods: ['balanced', 'creative'],
   },
   {
     key: 'weekday_cinema',
     label: 'Bio – hverdagsvisning',
     detail: '(rolig sal og gode billetter)',
     tone: 'youth',
+    moods: ['balanced', 'energetic', 'adventurous'],
+  },
+  {
+    key: 'ceramic_paint_studio',
+    label: 'Keramikmaling hos værksted',
+    detail: '(mal kopper eller skåle i 2 timer)',
+    tone: 'neutral',
+    moods: ['creative'],
+  },
+  {
+    key: 'plant_pot_lab',
+    label: 'Potteplanter & maling',
+    detail: '(hjemmeprojekt med pensler og planter)',
+    tone: 'neutral',
+    moods: ['creative', 'relaxed'],
+  },
+  {
+    key: 'makerspace_dropin',
+    label: 'Makerspace drop-in',
+    detail: '(3D-print, laserskæring eller tekstil)',
+    tone: 'adult',
+    moods: ['creative', 'adventurous'],
+  },
+  {
+    key: 'lyric_cafe',
+    label: 'Lyrik & latte',
+    detail: '(åben mic og notesbøger)',
+    tone: 'neutral',
+    moods: ['creative', 'balanced'],
   },
 ];
 
@@ -74,30 +106,63 @@ const WEEKEND_ACTIVITIES = [
     label: 'Brunch & gåtur',
     detail: '(1–2 timer, lavt budget)',
     tone: 'adult',
+    moods: ['balanced', 'relaxed'],
   },
   {
     key: 'streetfood_market',
     label: 'Streetfood-marked',
     detail: '(god energi og masser at smage)',
     tone: 'youth',
+    moods: ['balanced', 'energetic', 'adventurous'],
   },
   {
     key: 'picnic_park',
     label: 'Picnic i park',
     detail: '(afslappet og familievenligt)',
     tone: 'neutral',
+    moods: ['balanced', 'relaxed', 'creative'],
   },
   {
     key: 'climbing_gym',
     label: 'Klatrehal/aktivitetscenter',
     detail: '(energi og grin for alle)',
     tone: 'youth',
+    moods: ['energetic', 'adventurous'],
   },
   {
     key: 'evening_cinema',
     label: 'Aftenbio & dessert',
     detail: '(klassiker med forkælelse)',
     tone: 'adult',
+    moods: ['balanced', 'relaxed'],
+  },
+  {
+    key: 'pottery_weekend',
+    label: 'Keramikworkshop',
+    detail: '(drej, mal og glasér sammen)',
+    tone: 'neutral',
+    moods: ['creative'],
+  },
+  {
+    key: 'art_lab_pop_up',
+    label: 'Pop-up kunstværksted',
+    detail: '(mal lærreder eller totebags)',
+    tone: 'youth',
+    moods: ['creative', 'adventurous'],
+  },
+  {
+    key: 'gallery_crawl',
+    label: 'Galleri-hop',
+    detail: '(små udstillinger med kaffe undervejs)',
+    tone: 'adult',
+    moods: ['creative', 'balanced'],
+  },
+  {
+    key: 'forest_photo_walk',
+    label: 'Foto- og skovtur',
+    detail: '(kamera, picnic og natur)',
+    tone: 'neutral',
+    moods: ['creative', 'relaxed'],
   },
 ];
 
@@ -106,8 +171,9 @@ export const MOOD_OPTIONS = [
     key: 'balanced',
     label: 'Balanceret',
     description: 'Et åbent sind for både rolige og aktive forslag.',
-    activityLead: 'et godt bud er',
-    closing: 'Et balanceret valg, der passer til stemningen.',
+    activityLead: 'Evt.',
+    leads: ['Evt.', 'Prøv', 'Et bud:'],
+    nuancePool: ['både ro og energi', 'passer alle aldre', 'fleksibel stemning'],
     prompt:
       'familien er i et balanceret humør og er åben for flere slags aktiviteter',
     helper: 'Standardvalg – giver alsidige forslag.',
@@ -116,8 +182,9 @@ export const MOOD_OPTIONS = [
     key: 'relaxed',
     label: 'Afslappet',
     description: 'Roligt tempo og plads til hygge.',
-    activityLead: 'noget afslappende som',
-    closing: 'Rolige rammer til den afslappede energi.',
+    activityLead: 'Roligt bud:',
+    leads: ['Roligt bud:', 'Hygge-tip:', 'Langsomt tempo:'],
+    nuancePool: ['lavt tempo', 'tid til hygge', 'rolig stemning'],
     prompt: 'familien er i afslappet humør og ønsker lave tempo og hygge',
     helper: 'Foreslår rolige aktiviteter.',
   },
@@ -125,8 +192,9 @@ export const MOOD_OPTIONS = [
     key: 'energetic',
     label: 'Energisk',
     description: 'Høj puls og grin på programmet.',
-    activityLead: 'noget energisk som',
-    closing: 'Giver plads til al den ekstra energi.',
+    activityLead: 'Full energi:',
+    leads: ['Full energi:', 'Højt gear:', 'Turbo-tip:'],
+    nuancePool: ['giver høj puls', 'masser af energi', 'klar til grin'],
     prompt: 'familien er fuld af energi og søger en aktiv oplevelse',
     helper: 'Gode til bevægelse og aktivitet.',
   },
@@ -134,8 +202,9 @@ export const MOOD_OPTIONS = [
     key: 'adventurous',
     label: 'Eventyrlysten',
     description: 'Klar på at prøve noget nyt.',
-    activityLead: 'et lille eventyr som',
-    closing: 'Perfekt til at udforske noget nyt sammen.',
+    activityLead: 'Lille eventyr:',
+    leads: ['Lille eventyr:', 'Ny oplevelse:', 'Modigt bud:'],
+    nuancePool: ['nyt at opdage', 'småt eventyr', 'overrask jer selv'],
     prompt: 'familien er eventyrlysten og vil gerne prøve noget nyt',
     helper: 'Til jer der vil opleve nye steder.',
   },
@@ -143,8 +212,9 @@ export const MOOD_OPTIONS = [
     key: 'creative',
     label: 'Kreativ',
     description: 'Tid til projekter og fordybelse.',
-    activityLead: 'et kreativt indslag som',
-    closing: 'Skaber plads til idéer og fælles projekter.',
+    activityLead: 'Kreativt bud:',
+    leads: ['Kreativt bud:', 'Skab-selv:', 'Idéværksted:'],
+    nuancePool: ['plads til idéer', 'rolig fordybelse', 'fælles projekt'],
     prompt:
       'familien er i kreativt humør og ønsker en aktivitet med fordybelse',
     helper: 'Forslag med plads til kreativitet.',
@@ -161,21 +231,13 @@ const MOOD_TONE_MAP = {
   creative: ['neutral', 'adult'],
 };
 
-const TEMPLATE_VARIANTS = [
-  '{intro} {dayClause}, så prøv {activityPhrase} – velkommen til FamTime!',
-  '{intro} {dayClause}; et bud er {activityPhrase} – velkommen til FamTime!',
-  '{intro} {dayClause}, og {activityPhrase} kan blive jeres næste plan – velkommen til FamTime!',
-];
-
-const DAY_SENTENCES = {
+const DAY_PREFIX_VARIANTS = {
   withDay: [
-    (day) => `ønsker at mødes på ${day}`,
-    (day) => `satser på tid sammen ${day}`,
+    (label) => `${label}: `,
+    (label) => `${label} plan: `,
+    (label) => `${label}, bud: `,
   ],
-  withoutDay: [
-    () => 'er klar til at finde tid sammen',
-    () => 'er åben for at finde den næste familietid',
-  ],
+  withoutDay: [() => '', () => 'Snart: ', () => 'Når tiden passer: '],
 };
 
 const DEFAULT_NAME = 'FamTime-vennen';
@@ -197,6 +259,16 @@ const sanitizeString = (value) => {
     return '';
   }
   return value.trim();
+};
+
+const toTitleCase = (value) => {
+  const clean = sanitizeString(value);
+  if (!clean) {
+    return '';
+  }
+  return clean
+    .toLowerCase()
+    .replace(/(^|\s|-)(\S)/g, (_match, boundary, char) => `${boundary}${char.toUpperCase()}`);
 };
 
 const parseAge = (value) => {
@@ -224,21 +296,6 @@ const simpleHash = (input) => {
   return hash;
 };
 
-const selectTemplate = (hashSeed) => {
-  const hash = simpleHash(`${hashSeed}|template`);
-  return TEMPLATE_VARIANTS[hash % TEMPLATE_VARIANTS.length];
-};
-
-const selectDayClause = (hashSeed, dayKey) => {
-  const clauseOptions = dayKey
-    ? DAY_SENTENCES.withDay
-    : DAY_SENTENCES.withoutDay;
-  const hash = simpleHash(`${hashSeed}|dayClause`);
-  const resolver = clauseOptions[hash % clauseOptions.length];
-  const label = dayKey ? DAY_LABELS[dayKey]?.toLowerCase?.() ?? dayKey : null;
-  return resolver(label);
-};
-
 const pickDay = (hashSeed, days) => {
   if (!Array.isArray(days) || !days.length) {
     return null;
@@ -261,6 +318,14 @@ const pickDay = (hashSeed, days) => {
   return ordered[hash % ordered.length];
 };
 
+const pickVariant = (items, hashSeed, salt) => {
+  if (!Array.isArray(items) || !items.length) {
+    return null;
+  }
+  const index = simpleHash(`${hashSeed}|${salt}`) % items.length;
+  return items[index];
+};
+
 const pickActivity = (hashSeed, isWeekend, age, moodKey = DEFAULT_MOOD_KEY) => {
   const catalog = isWeekend ? WEEKEND_ACTIVITIES : WEEKDAY_ACTIVITIES;
   const tonePreference =
@@ -272,14 +337,22 @@ const pickActivity = (hashSeed, isWeekend, age, moodKey = DEFAULT_MOOD_KEY) => {
           : null
       : null;
 
+  const matchesMood = (item) =>
+    Array.isArray(item.moods) && item.moods.includes(moodKey);
+  const moodPool =
+    moodKey === 'balanced'
+      ? catalog
+      : catalog.filter((item) => matchesMood(item));
+  const basePool = moodPool.length ? moodPool : catalog;
+
   const toneBucket =
     tonePreference === null
       ? []
-      : catalog.filter((item) => item.tone === tonePreference);
+      : basePool.filter((item) => item.tone === tonePreference);
 
   const moodTones = MOOD_TONE_MAP[moodKey] ?? [];
-  const moodBucket = moodTones.length
-    ? catalog.filter((item) => moodTones.includes(item.tone))
+  const moodToneBucket = moodTones.length
+    ? basePool.filter((item) => moodTones.includes(item.tone))
     : [];
 
   const dedupeByKey = (items) => {
@@ -303,34 +376,26 @@ const pickActivity = (hashSeed, isWeekend, age, moodKey = DEFAULT_MOOD_KEY) => {
     return bucket[index];
   };
 
-  const priorityPool = dedupeByKey([...moodBucket, ...toneBucket]);
-  const priorityPick = pickFromBucket(priorityPool, 'priority');
+  const priorityPool = dedupeByKey([
+    ...toneBucket,
+    ...moodToneBucket,
+    ...moodPool,
+  ]);
+  const priorityPick = pickFromBucket(
+    priorityPool.length ? priorityPool : basePool,
+    'priority'
+  );
   if (priorityPick) {
     return priorityPick;
   }
 
+  const primaryPick = pickFromBucket(basePool, 'primary');
+  if (primaryPick) {
+    return primaryPick;
+  }
+
   const catalogPick = pickFromBucket(catalog, 'all');
   return catalogPick ?? catalog[0];
-};
-
-const buildIntro = (name, age, city, gender) => {
-  const parts = [];
-  parts.push(name || DEFAULT_NAME);
-
-  if (typeof age === 'number') {
-    parts.push(`${age} år`);
-  }
-
-  if (city) {
-    parts.push(`fra ${city}`);
-  }
-
-  const base = parts.join(', ');
-  if (gender) {
-    return `${base} (${gender})`;
-  }
-
-  return base;
 };
 
 export const generateProfileSuggestion = (
@@ -364,23 +429,39 @@ export const generateProfileSuggestion = (
       : WEEKEND_KEYS.includes(selectedDay);
 
   const activity = pickActivity(hashSeed, isWeekend, age, moodConfig.key);
-  const template = selectTemplate(hashSeed);
-  const dayClause = selectDayClause(hashSeed, selectedDay);
-  const intro = buildIntro(name, age, city, gender);
+  const formattedCity = toTitleCase(city);
+  const citySegment = formattedCity ? ` i ${formattedCity}` : '';
+  const detailRaw = sanitizeString(activity.detail)
+    .replace(/[()]/g, '')
+    .replace(/[–—]/g, ' til ')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const activityLead =
+    pickVariant(moodConfig?.leads, hashSeed, 'lead') ??
+    moodConfig?.activityLead ??
+    'Evt.';
+  const nuanceText = pickVariant(moodConfig?.nuancePool, hashSeed, 'nuance');
+  const detailPrimary = detailRaw || nuanceText || '';
+  const detailSegment = detailPrimary ? ` (${detailPrimary})` : '';
+  const activityPhrase = `${activityLead} ${activity.label}${citySegment}`.trim();
+  const dayPrefix = (() => {
+    const pool = selectedDay
+      ? DAY_PREFIX_VARIANTS.withDay
+      : DAY_PREFIX_VARIANTS.withoutDay;
+    const variant = pickVariant(pool, hashSeed, 'dayPrefix');
+    if (!variant) {
+      return selectedDay ? `${toLabel(selectedDay)}: ` : '';
+    }
+    const label = selectedDay ? toLabel(selectedDay) : null;
+    const resolved =
+      typeof variant === 'function' ? variant(label) : String(variant || '');
+    if (resolved && !resolved.endsWith(' ')) {
+      return `${resolved} `;
+    }
+    return resolved || '';
+  })();
 
-  const citySegment = city ? ` i ${city}` : '';
-  const detailSegment = activity.detail ? ` ${activity.detail}` : '';
-  const activityLead = moodConfig?.activityLead ?? 'et godt bud er';
-  const activityPhrase =
-    `${activityLead} ${activity.label}${citySegment}${detailSegment}`.trim();
-  const closingRemark = moodConfig?.closing ? moodConfig.closing : '';
-
-  const baseSuggestion = template
-    .replace('{intro}', intro)
-    .replace('{dayClause}', dayClause)
-    .replace('{activityPhrase}', activityPhrase);
-
-  return closingRemark ? `${baseSuggestion} ${closingRemark}` : baseSuggestion;
+  return `${dayPrefix}${activityPhrase}${detailSegment}`.replace(/\s+/g, ' ').trim();
 };
 
 const toLabel = (dayKey) => {
@@ -521,44 +602,41 @@ const AISuggestion = ({ user, onSuggestion, variant = 'card' }) => {
     const moodDetail = `${selectedMood.label} – ${selectedMood.description}`;
 
     const systemPrompt = [
-      'Du er FamTime-assistenten. Du skriver på dansk og svarer med præcis én sætning.',
-      'Du får både rå brugerdata og et deterministisk basisforslag. Din opgave er at polere teksten uden at ændre dag, aktivitet eller by fra basisforslaget.',
-      'Tilføj gerne en kort nuance (fx stemning, varighed eller budget), men alt skal være i én sætning med venlig tone.',
-      'Tag højde for brugerens humør og sørg for, at tonen matcher.',
-      'Hvis nogle informationer mangler, nævn dem ikke. Afslut altid med "Velkommen til FamTime!"',
+      'Du er FamTime-assistenten og skriver på dansk i én kort linje.',
+      'Max 18 ord, ingen emoji, slogans eller bindestreger.',
+      'Brug basisforslaget som fakta og lever præcis ét forslag, hvor dag/aktivitet/by bevares og tonen matcher humøret.',
+      'Format: "[Dag: ]<kort lead> <aktivitet> [i <by>] (<kort nuance>)".',
     ].join(' ');
 
     const userPrompt = [
-      'Brugerdata:',
-      `- Navn: ${profile.name || DEFAULT_NAME}`,
-      `- Alder: ${profile.age ?? 'ukendt'}`,
-      `- Køn: ${profile.gender || 'ukendt'}`,
-      `- By: ${profile.city || 'ukendt'}`,
-      `- Foretrukne dage: ${preferredDayLabels}`,
-      `- Seed (stabilitet): ${profile.seedHash}`,
-      `- Humør: ${moodDetail}`,
-      `- Foretrukne hverdage: ${
-        weekdayDays.length ? weekdayDays.map(toLabel).join(', ') : 'ingen'
-      }`,
-      `- Foretrukne weekenddage: ${
-        weekendDays.length ? weekendDays.map(toLabel).join(', ') : 'ingen'
-      }`,
+      'Brugerdata (kun til tone, nævn dem ikke direkte):',
+      `Navn: ${profile.name || DEFAULT_NAME}`,
+      `Alder: ${profile.age ?? 'ukendt'}`,
+      `Køn: ${profile.gender || 'ukendt'}`,
+      `By: ${profile.city || 'ukendt'}`,
+      `Humør: ${moodDetail}`,
+      `Foretrukne dage: ${preferredDayLabels}`,
       '',
-      `Deterministisk basisforslag: "${fallbackSuggestion}"`,
+      `Basisforslag: "${fallbackSuggestion}"`,
       '',
-      `Forfin sætningen uden at ændre informationerne. Bevar stemningen fra humøret: ${selectedMood.prompt}.`,
-      'Forfin sætningen, men bevar dag, aktivitet og eventuel lokation uændret.',
-      'Svar med præcis én sætning på dansk.',
+      'Instruktioner:',
+      `1) Bevar dag, aktivitet og evt. lokation fra basisforslaget. Tonespecifik note: ${selectedMood.prompt}.`,
+      '2) Svar med én kort linje (sætning eller fragment), max 18 ord.',
+      '3) Nævn ikke navn, alder eller køn, og skriv aldrig "Velkommen til FamTime".',
     ].join('\n');
 
-    return {
+    const lowerModel = typeof directModel === 'string' ? directModel.toLowerCase() : '';
+    const payload = {
       model: directModel,
-      temperature: 0,
       messages: [
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
       ],
     };
+    if (!lowerModel.includes('gpt-5')) {
+      payload.temperature = 0;
+    }
+    return payload;
   }, [
     fallbackSuggestion,
     directModel,

@@ -34,6 +34,15 @@ const toLabel = (dayKey) => {
   return mapping[normalized] || normalized || 'ukendt dag';
 };
 
+const MOOD_PROMPTS = {
+  balanced:
+    'familien er i et balanceret humør og er åben for flere slags aktiviteter',
+  relaxed: 'familien er i afslappet humør og ønsker lave tempo og hygge',
+  energetic: 'familien er fuld af energi og søger en aktiv oplevelse',
+  adventurous: 'familien er eventyrlysten og vil gerne prøve noget nyt',
+  creative: 'familien er i kreativt humør og ønsker en aktivitet med fordybelse',
+};
+
 exports.openaiSuggestion = functions
   .region(REGION)
   .https.onRequest(async (req, res) => {
@@ -75,7 +84,7 @@ exports.openaiSuggestion = functions
 
     const model = functions.config().openai?.model || 'gpt-4o-mini';
 
-    const { profile = {}, fallbackSuggestion } = req.body || {};
+    const { profile = {}, fallbackSuggestion, mood } = req.body || {};
 
     if (typeof fallbackSuggestion !== 'string') {
       res.status(400).json({ error: 'Missing fallbackSuggestion' });
@@ -115,45 +124,50 @@ exports.openaiSuggestion = functions
       return ['friday', 'saturday', 'sunday'].includes(normalized);
     });
 
+    const moodKey = sanitizeString(mood).toLowerCase();
+    const moodDetail =
+      MOOD_PROMPTS[moodKey] || MOOD_PROMPTS.balanced || '';
+
     const systemPrompt = [
-      'Du er FamTime-assistenten. Du skriver på dansk og svarer med præcis én sætning.',
-      'Du modtager rå brugerdata samt et basisforslag. Du finpudser sproget uden at ændre dag, aktivitet eller by fra basisforslaget.',
-      'Tilføj gerne en kort nuance (stemning, varighed eller budget). Afslut altid med "Velkommen til FamTime!"',
-      'Undgå at nævne manglende data.',
+      'Du er FamTime-assistenten og skriver på dansk i én kort linje.',
+      'Max 18 ord, ingen emoji, slogans eller bindestreger.',
+      'Brug basisforslaget til fakta og lever præcis ét forslag, hvor dag/aktivitet/by bevares og tonen matcher humøret.',
+      'Format: "[Dag: ]<kort lead> <aktivitet> [i <by>] (<kort nuance>)".',
     ].join(' ');
 
     const userPrompt = [
-      'Brugerdata:',
-      `- Navn: ${name || 'FamTime-vennen'}`,
-      `- Alder: ${age ?? 'ukendt'}`,
-      `- Køn: ${gender || 'ukendt'}`,
-      `- By: ${city || 'ukendt'}`,
-      `- Foretrukne dage: ${preferredDayLabels}`,
-      `- Seed: ${seedHash ?? 'ukendt'}`,
-      `- Foretrukne hverdage: ${
-        weekdayDays.length ? weekdayDays.map(toLabel).join(', ') : 'ingen'
-      }`,
-      `- Foretrukne weekenddage: ${
-        weekendDays.length ? weekendDays.map(toLabel).join(', ') : 'ingen'
-      }`,
+      'Brugerdata (kun til tone, nævn dem ikke direkte):',
+      `Navn: ${name || 'FamTime-vennen'}`,
+      `Alder: ${age ?? 'ukendt'}`,
+      `Køn: ${gender || 'ukendt'}`,
+      `By: ${city || 'ukendt'}`,
+      `Humør: ${moodDetail}`,
+      `Foretrukne dage: ${preferredDayLabels}`,
       '',
       `Basisforslag: "${fallbackSuggestion}"`,
       '',
-      'Forfin sætningen, men bevar dag, aktivitet og eventuel lokation uændret.',
-      'Svar med præcis én dansk sætning.',
+      'Instruktioner:',
+      '1) Bevar dag, aktivitet og evt. lokation fra basisforslaget.',
+      '2) Svar med én kort linje (sætning eller fragment), max 18 ord.',
+      `3) Tonespecifik note: ${moodDetail}. Nævn ikke navn, alder eller køn, og skriv aldrig "Velkommen til FamTime".`,
     ].join('\n');
+
+    const lowerModel = typeof model === 'string' ? model.toLowerCase() : '';
+    const requestBody = {
+      model,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userPrompt },
+      ],
+    };
+    if (!lowerModel.includes('gpt-5')) {
+      requestBody.temperature = 0;
+    }
 
     try {
       const response = await axios.post(
         'https://api.openai.com/v1/chat/completions',
-        {
-          model,
-          temperature: 0,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userPrompt },
-          ],
-        },
+        requestBody,
         {
           headers: {
             'Content-Type': 'application/json',
