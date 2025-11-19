@@ -32,6 +32,33 @@ const LoginScreen = ({ navigation }) => {
   const [authError, setAuthError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  const clearFieldError = (field) => {
+    setFieldErrors((prev) => {
+      if (!prev[field]) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next[field];
+      return next;
+    });
+  };
+
+  const clearAuthError = () => {
+    setAuthError((prev) => (prev ? '' : prev));
+  };
+
+  const handleEmailChange = (value) => {
+    setEmail(value);
+    clearFieldError('email');
+    clearAuthError();
+  };
+
+  const handlePasswordChange = (value) => {
+    setPassword(value);
+    clearFieldError('password');
+    clearAuthError();
+  };
+
   const validate = () => {
     // Sikrer at brugerens input er gyldigt før login-forsøg.
     const nextErrors = {};
@@ -52,6 +79,17 @@ const LoginScreen = ({ navigation }) => {
     return Object.keys(nextErrors).length === 0;
   };
 
+  const resetAuthSession = async () => {
+    if (!auth.currentUser) {
+      return;
+    }
+    try {
+      await auth.signOut();
+    } catch (signOutError) {
+      console.warn('[LoginScreen] Could not reset auth session', signOutError);
+    }
+  };
+
   const handleLogin = async () => {
     // Forsøger at logge brugeren ind og oversætter fejl til menneskelig tekst.
     if (!validate()) {
@@ -64,6 +102,7 @@ const LoginScreen = ({ navigation }) => {
       await auth.signInWithEmailAndPassword(email.trim(), password);
     } catch (error) {
       console.error('[LoginScreen] Login failed', error);
+      await resetAuthSession();
       setAuthError(getFriendlyAuthError(error));
     } finally {
       setLoading(false);
@@ -94,7 +133,7 @@ const LoginScreen = ({ navigation }) => {
             <FormInput
               label="E-mail"
               value={email}
-              onChangeText={setEmail}
+              onChangeText={handleEmailChange}
               keyboardType="email-address"
               autoCorrect={false}
               error={fieldErrors.email}
@@ -105,8 +144,9 @@ const LoginScreen = ({ navigation }) => {
             <FormInput
               label="Adgangskode"
               value={password}
-              onChangeText={setPassword}
+              onChangeText={handlePasswordChange}
               secureTextEntry
+              autoCorrect={false}
               error={fieldErrors.password}
               style={styles.field}
               placeholder="••••••"
