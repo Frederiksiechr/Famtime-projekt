@@ -24,68 +24,32 @@ const WEEK_DAY_LABELS = {
   sunday: 'Søndag',
 };
 
-const extractPrimaryTimeWindow = (timeWindows = {}) => {
+const formatTimeWindows = (timeWindows = {}) => {
   if (!timeWindows || typeof timeWindows !== 'object') {
-    return { start: '', end: '' };
+    return 'Ikke udfyldt';
   }
 
-  const candidates = [];
-
-  if (Array.isArray(timeWindows.default) && timeWindows.default.length) {
-    candidates.push(timeWindows.default[0]);
-  }
-
-  Object.keys(timeWindows).forEach((key) => {
-    if (key === 'default') {
-      return;
-    }
-    const entry = timeWindows[key];
-    if (Array.isArray(entry) && entry.length) {
-      candidates.push(entry[0]);
+  const summaries = [];
+  Object.entries(WEEK_DAY_LABELS).forEach(([dayKey, label]) => {
+    const entryList = timeWindows[dayKey];
+    if (Array.isArray(entryList) && entryList.length) {
+      const entry = entryList[0];
+      if (entry?.start && entry?.end) {
+        summaries.push(`${label}: ${entry.start}-${entry.end}`);
+      }
     }
   });
 
-  const firstValid = candidates.find((candidate) => {
-    if (!candidate || typeof candidate !== 'object') {
-      return false;
-    }
-    const readStart = typeof candidate.start === 'string'
-      ? candidate.start
-      : typeof candidate.get === 'function'
-        ? candidate.get('start')
-        : null;
-    const readEnd = typeof candidate.end === 'string'
-      ? candidate.end
-      : typeof candidate.get === 'function'
-        ? candidate.get('end')
-        : null;
-    return typeof readStart === 'string' && typeof readEnd === 'string';
-  });
-
-  if (!firstValid) {
-    return { start: '', end: '' };
+  if (summaries.length) {
+    return summaries.join(', ');
   }
 
-  const readValue = (key) => {
-    if (typeof firstValid[key] === 'string') {
-      return firstValid[key];
-    }
-    if (typeof firstValid.get === 'function') {
-      const value = firstValid.get(key);
-      return typeof value === 'string' ? value : '';
-    }
-    return '';
-  };
-
-  return {
-    start: readValue('start'),
-    end: readValue('end'),
-  };
-};
-
-const formatTimeWindow = (start, end) => {
-  if (typeof start === 'string' && start && typeof end === 'string' && end) {
-    return `${start} - ${end}`;
+  const defaultEntry =
+    Array.isArray(timeWindows.default) && timeWindows.default.length
+      ? timeWindows.default[0]
+      : null;
+  if (defaultEntry?.start && defaultEntry?.end) {
+    return `Standard: ${defaultEntry.start}-${defaultEntry.end}`;
   }
   return 'Ikke udfyldt';
 };
@@ -179,9 +143,6 @@ const AccountSettingsScreen = ({ navigation }) => {
         const userDoc = await db.collection('users').doc(currentUser.uid).get();
         const userData = userDoc.data() ?? {};
 
-        const primaryTimeWindow = extractPrimaryTimeWindow(
-          userData.preferredFamilyTimeWindows
-        );
         const minDurationMinutes = Number.isFinite(
           userData.preferredFamilyMinDurationMinutes
         )
@@ -201,19 +162,13 @@ const AccountSettingsScreen = ({ navigation }) => {
           location: userData.location ?? '',
           familyRole: userData.familyRole ?? '',
           familyId: userData.familyId ?? '',
-          preferredFamilyFrequency:
-            typeof userData.preferredFamilyFrequency === 'number'
-              ? userData.preferredFamilyFrequency
-              : null,
           preferredFamilyDays: Array.isArray(userData.preferredFamilyDays)
             ? userData.preferredFamilyDays
             : [],
-          preferredTimeStart:
-            typeof primaryTimeWindow.start === 'string'
-              ? primaryTimeWindow.start
-              : '',
-          preferredTimeEnd:
-            typeof primaryTimeWindow.end === 'string' ? primaryTimeWindow.end : '',
+          preferredFamilyTimeWindows:
+            userData.preferredFamilyTimeWindows && typeof userData.preferredFamilyTimeWindows === 'object'
+              ? userData.preferredFamilyTimeWindows
+              : null,
           preferredMinDuration: minDurationMinutes,
           preferredMaxDuration: maxDurationMinutes,
           avatarEmoji:
@@ -651,21 +606,12 @@ const AccountSettingsScreen = ({ navigation }) => {
                 Lokation: {userProfile?.location || 'Ikke udfyldt'}
               </Text>
               <Text style={styles.fieldText}>
-                Ønskede familietider pr. uge:{' '}
-                {typeof userProfile?.preferredFamilyFrequency === 'number'
-                  ? userProfile.preferredFamilyFrequency
-                  : 'Ikke udfyldt'}
-              </Text>
-              <Text style={styles.fieldText}>
                 Foretrukne dage:{' '}
                 {formatPreferredDays(userProfile?.preferredFamilyDays)}
               </Text>
               <Text style={styles.fieldText}>
                 Foretrukket tidsrum:{' '}
-                {formatTimeWindow(
-                  userProfile?.preferredTimeStart,
-                  userProfile?.preferredTimeEnd
-                )}
+                {formatTimeWindows(userProfile?.preferredFamilyTimeWindows)}
               </Text>
               <Text style={styles.fieldText}>
                 Varighedsgrænser:{' '}

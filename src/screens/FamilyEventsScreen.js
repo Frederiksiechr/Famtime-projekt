@@ -347,6 +347,7 @@ const FamilyEventsScreen = () => {
   const [showStartPicker, setShowStartPicker] = useState(isIOS);
   const [showEndPicker, setShowEndPicker] = useState(isIOS);
   const [suggestions, setSuggestions] = useState([]);
+  const [suggestionNotice, setSuggestionNotice] = useState('');
   const [selectedSuggestionId, setSelectedSuggestionId] = useState(null);
   const [activeSlotId, setActiveSlotId] = useState(null);
   const [calendarContext, setCalendarContext] = useState({
@@ -587,10 +588,6 @@ const FamilyEventsScreen = () => {
                 : null;
 
             nextPreferences[memberIds[index]] = {
-              frequency:
-                typeof data.preferredFamilyFrequency === 'number'
-                  ? data.preferredFamilyFrequency
-                  : null,
               days: Array.isArray(data.preferredFamilyDays)
                 ? data.preferredFamilyDays
                 : [],
@@ -924,6 +921,7 @@ const FamilyEventsScreen = () => {
   };
 
   const buildSuggestions = useCallback(() => {
+    setSuggestionNotice('');
     const busyRanges = [];
     const appendBusyRange = (start, end) => {
       const startDate = availabilityUtils.toDate(start);
@@ -1023,15 +1021,34 @@ const FamilyEventsScreen = () => {
       .map(([, entry]) => availabilityUtils.normalizeWeekdayList(entry?.days))
       .filter((days) => Array.isArray(days) && days.length);
 
-    let allowedWeekdays = allowedWeekdayCandidates.length
-      ? allowedWeekdayCandidates.reduce(
-          (acc, days) => acc.filter((day) => days.includes(day)),
-          [...WEEKDAY_SHORT_ORDER]
-        )
-      : [...WEEKDAY_SHORT_ORDER];
+    let allowedWeekdays = [];
+    let noCommonPreferredDays = false;
 
-    if (!allowedWeekdays.length) {
+    if (allowedWeekdayCandidates.length) {
+      allowedWeekdays = [...allowedWeekdayCandidates[0]];
+      for (let index = 1; index < allowedWeekdayCandidates.length; index += 1) {
+        allowedWeekdays = allowedWeekdays.filter((day) =>
+          allowedWeekdayCandidates[index].includes(day)
+        );
+      }
+      allowedWeekdays = Array.from(new Set(allowedWeekdays)).sort(
+        (a, b) => WEEKDAY_SHORT_ORDER.indexOf(a) - WEEKDAY_SHORT_ORDER.indexOf(b)
+      );
+      if (!allowedWeekdays.length) {
+        noCommonPreferredDays = true;
+      }
+    } else {
       allowedWeekdays = [...WEEKDAY_SHORT_ORDER];
+    }
+
+    if (noCommonPreferredDays) {
+      setSuggestions([]);
+      setSelectedSuggestionId(null);
+      setActiveSlotId(null);
+      setSuggestionNotice(
+        'Ingen fælles foretrukne dage endnu. Opdater familiernes præferencer for at få forslag.'
+      );
+      return;
     }
 
     const derivedMaxSuggestionDays = Math.min(
@@ -1055,10 +1072,6 @@ const FamilyEventsScreen = () => {
     const userPreferenceMap = {};
     preferenceEntries.forEach(([userId, entry]) => {
       const normalizedDays = availabilityUtils.normalizeWeekdayList(entry?.days);
-      const userFrequency =
-        typeof entry?.frequency === 'number' && entry.frequency > 0
-          ? Math.min(7, Math.max(1, Math.round(entry.frequency)))
-          : null;
       const explicitMaxDays =
         typeof entry?.maxSuggestionDaysPerWeek === 'number' && entry.maxSuggestionDaysPerWeek > 0
           ? Math.min(7, Math.max(1, Math.round(entry.maxSuggestionDaysPerWeek)))
@@ -1097,8 +1110,6 @@ const FamilyEventsScreen = () => {
       }
       if (explicitMaxDays) {
         payload.maxSuggestionDaysPerWeek = explicitMaxDays;
-      } else if (userFrequency) {
-        payload.maxSuggestionDaysPerWeek = userFrequency;
       }
       if (entry?.timeWindows && typeof entry.timeWindows === 'object') {
         payload.timeWindows = entry.timeWindows;
@@ -2060,8 +2071,14 @@ const initializeCalendarContext = useCallback(
                 ))}
               </View>
             ) : (
-              <Text style={styles.modalHint}>
-                Ingen oplagte tider i de næste dage. Du kan vælge tidspunkt manuelt.
+              <Text
+                style={[
+                  styles.modalHint,
+                  suggestionNotice ? styles.modalHintWarning : null,
+                ]}
+              >
+                {suggestionNotice ||
+                  'Ingen oplagte tider i de næste dage. Du kan vælge tidspunkt manuelt.'}
               </Text>
             )}
 
@@ -2799,6 +2816,10 @@ const styles = StyleSheet.create({
   modalHint: {
     fontSize: fontSizes.sm,
     color: colors.mutedText,
+  },
+  modalHintWarning: {
+    color: colors.error,
+    fontWeight: '600',
   },
   modalPrimaryButton: {
     marginTop: spacing.lg,
