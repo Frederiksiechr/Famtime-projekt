@@ -5,15 +5,19 @@
  * @returns {string}
  */
 export const getFriendlyAuthError = (error) => {
-  if (!error || !error.code) {
+  const errorCode = typeof error?.code === 'string' ? error.code : '';
+
+  if (!errorCode) {
     return 'Noget gik galt. Prøv igen.';
   }
 
-  switch (error.code) {
+  switch (errorCode) {
     case 'auth/invalid-email':
       return 'E-mailen er ikke gyldig.';
     case 'auth/user-not-found':
     case 'auth/wrong-password':
+    case 'auth/invalid-credential':
+    case 'auth/invalid-login-credentials':
       return 'E-mail eller adgangskode er forkert.';
     case 'auth/weak-password':
       return 'Adgangskoden skal mindst være 6 tegn.';
@@ -21,7 +25,13 @@ export const getFriendlyAuthError = (error) => {
       return 'Der findes allerede en bruger med denne e-mail.';
     case 'auth/too-many-requests':
       return 'For mange forsøg. Vent lidt og prøv igen.';
+    case 'auth/user-disabled':
+      return 'Denne konto er deaktiveret. Kontakt FamTime for hjælp.';
+    case 'auth/network-request-failed':
+      return 'Ingen forbindelse til nettet. Tjek din internetforbindelse og prøv igen.';
+    case 'auth/internal-error':
+      return 'Firebase kunne ikke logge dig ind. Prøv igen om et øjeblik.';
     default:
-      return 'Noget gik galt. Prøv igen.';
+      return `Noget gik galt. Prøv igen. (${errorCode})`;
   }
 };

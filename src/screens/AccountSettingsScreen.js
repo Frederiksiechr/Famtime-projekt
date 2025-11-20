@@ -92,6 +92,7 @@ const AccountSettingsScreen = ({ navigation }) => {
   const [actionError, setActionError] = useState('');
   const [acceptingIds, setAcceptingIds] = useState([]);
   const [leavingFamily, setLeavingFamily] = useState(false);
+  const [deletingProfile, setDeletingProfile] = useState(false);
   const [removingMemberIds, setRemovingMemberIds] = useState([]);
 
   const currentUser = auth.currentUser;
@@ -216,6 +217,7 @@ const AccountSettingsScreen = ({ navigation }) => {
                   ? data.pendingInvites
                   : [],
                 ownerEmail: data.ownerEmail ?? '',
+                ownerId: data.ownerId ?? '',
               });
             });
         } else {
@@ -324,7 +326,8 @@ const AccountSettingsScreen = ({ navigation }) => {
 
       const pendingInvites = Array.isArray(familyData.pendingInvites)
         ? familyData.pendingInvites.filter(
-            (email) => email.toLowerCase() !== userEmailLower
+            (email) =>
+              typeof email === 'string' && email.toLowerCase() !== userEmailLower
           )
         : [];
 
@@ -359,8 +362,61 @@ const AccountSettingsScreen = ({ navigation }) => {
     navigation.navigate('FamilySetup');
   };
 
+  const determineRoleLabel = (role) => {
+    if (typeof role !== 'string') {
+      return 'Medlem';
+    }
+    const normalized = role.trim().toLowerCase();
+    if (normalized === 'owner' || normalized === 'admin') {
+      return 'Administrator';
+    }
+    return 'Medlem';
+  };
+
+  const canCurrentUserManageFamily = () => {
+    const currentRole = determineRoleLabel(userProfile?.familyRole);
+    if (currentRole !== 'Administrator') {
+      return false;
+    }
+    const ownerEmailLower = typeof family?.ownerEmail === 'string' ? family.ownerEmail.toLowerCase() : '';
+    if (ownerEmailLower && ownerEmailLower !== userEmailLower) {
+      return false;
+    }
+    return true;
+  };
+
+  const prepareOwnerTransfer = (member) => {
+    if (!member || !member.userId) {
+      return;
+    }
+    handleLeaveFamily(member);
+  };
+
   const confirmLeaveFamily = () => {
     if (!family?.id || !currentUser) {
+      return;
+    }
+
+    const isOwner = canCurrentUserManageFamily();
+    const memberOptions = (family.members || []).filter(
+      (member) => member.userId && member.userId !== currentUser.uid
+    );
+
+    if (isOwner && memberOptions.length) {
+      const memberChoices = memberOptions
+        .map((member) => member.displayName || member.name || member.email || 'Familiemedlem');
+
+      Alert.alert(
+        'Overdrag administrator',
+        'Vælg hvem der skal være administrator, før du forlader familien.',
+        [
+          { text: 'Annuller', style: 'cancel' },
+          ...memberChoices.map((label, index) => ({
+            text: label,
+            onPress: () => prepareOwnerTransfer(memberOptions[index]),
+          })),
+        ]
+      );
       return;
     }
 
@@ -369,18 +425,14 @@ const AccountSettingsScreen = ({ navigation }) => {
       'Er du sikker på, at du vil forlade familien? Du mister adgangen til familieevents.',
       [
         { text: 'Annuller', style: 'cancel' },
-        {
-          text: 'Forlad',
-          style: 'destructive',
-          onPress: handleLeaveFamily,
-        },
+        { text: 'Forlad', style: 'destructive', onPress: () => handleLeaveFamily() },
       ]
     );
   };
 
-  const handleLeaveFamily = async () => {
+  const handleLeaveFamily = async (nextOwnerMember = null) => {
     if (!family?.id || !currentUser) {
-      return;
+      return false;
     }
 
     try {
@@ -407,7 +459,21 @@ const AccountSettingsScreen = ({ navigation }) => {
         };
 
         if (data.ownerId === currentUser.uid) {
-          if (members.length > 0) {
+          if (nextOwnerMember && nextOwnerMember.userId) {
+            const ownerIndex = members.findIndex((member) => member.userId === nextOwnerMember.userId);
+            if (ownerIndex !== -1) {
+              members[ownerIndex] = {
+                ...members[ownerIndex],
+                role: 'admin',
+              };
+              updates.members = members;
+              updates.ownerId = nextOwnerMember.userId;
+              updates.ownerEmail =
+                typeof members[ownerIndex].email === 'string'
+                  ? members[ownerIndex].email
+                  : nextOwnerMember.email ?? '';
+            }
+          } else if (members.length > 0) {
             const nextAdmin = {
               ...members[0],
               role: 'admin',
@@ -452,8 +518,10 @@ const AccountSettingsScreen = ({ navigation }) => {
         prev ? { ...prev, familyId: '', familyRole: '' } : prev
       );
       setStatusMessage('Du har forladt familien.');
+      return true;
     } catch (_leaveError) {
       setActionError('Kunne ikke forlade familien. Prøv igen.');
+      return false;
     } finally {
       setLeavingFamily(false);
     }
@@ -537,6 +605,136 @@ const AccountSettingsScreen = ({ navigation }) => {
       setActionError('Kunne ikke fjerne medlemmet. Prøv igen.');
     } finally {
       setRemovingMemberIds((prev) => prev.filter((id) => id !== member.userId));
+    }
+  };
+
+  const confirmDeleteProfile = () => {
+    if (!currentUser || deletingProfile) {
+      return;
+    }
+
+    const promptDeleteApproval = (nextOwnerMember = null) => {
+      Alert.alert(
+        'Slet profil',
+        'Er du sikker på at du vil slette din profil?',
+        [
+          { text: 'Nej', style: 'cancel' },
+          {
+            text: 'Ja',
+            style: 'destructive',
+            onPress: () => handleDeleteProfile(nextOwnerMember),
+          },
+        ]
+      );
+    };
+
+    if (family?.id && canCurrentUserManageFamily()) {
+      const memberOptions = (family.members || []).filter(
+        (member) => member.userId && member.userId !== currentUser.uid
+      );
+
+      if (memberOptions.length) {
+        const memberChoices = memberOptions.map(
+          (member) => member.displayName || member.name || member.email || 'Familiemedlem'
+        );
+
+        Alert.alert(
+          'Overdrag administrator',
+          'Vælg hvem der skal være administrator, før du sletter din profil.',
+          [
+            { text: 'Annuller', style: 'cancel' },
+            ...memberChoices.map((label, index) => ({
+              text: label,
+              onPress: () => promptDeleteApproval(memberOptions[index]),
+            })),
+          ]
+        );
+        return;
+      }
+    }
+
+    promptDeleteApproval();
+  };
+
+  const handleDeleteProfile = async (nextOwnerMember = null) => {
+    if (!currentUser) {
+      setActionError('Ingen aktiv bruger fundet. Log ind igen.');
+      return;
+    }
+
+    try {
+      setDeletingProfile(true);
+      setActionError('');
+      setStatusMessage('');
+
+      if (family?.id) {
+        const leftSuccessfully = await handleLeaveFamily(nextOwnerMember);
+        if (!leftSuccessfully) {
+          return;
+        }
+      }
+
+      const userDocRef = db.collection('users').doc(currentUser.uid);
+      const calendarDocRef = db.collection('calendar').doc(currentUser.uid);
+      const [userSnapshot, calendarSnapshot] = await Promise.all([
+        userDocRef.get(),
+        calendarDocRef.get(),
+      ]);
+      const userBackup = userSnapshot.exists ? userSnapshot.data() : null;
+      const calendarBackup = calendarSnapshot.exists ? calendarSnapshot.data() : null;
+
+      if (calendarSnapshot.exists) {
+        await calendarDocRef.delete();
+      }
+      if (userSnapshot.exists) {
+        await userDocRef.delete();
+      }
+
+      const activeUser = auth.currentUser;
+      if (!activeUser) {
+        setStatusMessage('Din profil er slettet. Du logges nu ud.');
+        await auth.signOut().catch(() => {});
+        return;
+      }
+
+      try {
+        await activeUser.delete();
+      } catch (authError) {
+        if (userBackup) {
+          try {
+            await userDocRef.set(userBackup);
+          } catch (_restoreUserError) {
+            // ignore restore issues
+          }
+        }
+        if (calendarBackup) {
+          try {
+            await calendarDocRef.set(calendarBackup);
+          } catch (_restoreCalendarError) {
+            // ignore restore issues
+          }
+        }
+
+        const message =
+          typeof authError?.message === 'string' ? authError.message : '';
+        if (
+          authError?.code === 'auth/requires-recent-login' ||
+          message.includes('requires-recent-login')
+        ) {
+          setActionError(
+            'Af sikkerhedshensyn skal du logge ind igen, før du kan slette din profil.'
+          );
+          return;
+        }
+        throw authError;
+      }
+
+      setStatusMessage('Din profil er slettet. Du logges nu ud.');
+      await auth.signOut().catch(() => {});
+    } catch (_deleteError) {
+      setActionError('Kunne ikke slette din profil. Prøv igen.');
+    } finally {
+      setDeletingProfile(false);
     }
   };
 
@@ -688,7 +886,6 @@ const AccountSettingsScreen = ({ navigation }) => {
                         : typeof member?.email === 'string' && member.email.trim().length
                           ? member.email.trim()
                           : 'Familiemedlem';
-
                   return (
                     <View
                       key={`${member.userId}-${member.email}`}
@@ -698,15 +895,6 @@ const AccountSettingsScreen = ({ navigation }) => {
                         {memberEmoji} {memberName}{' '}
                         {member.role === 'admin' ? '(Administrator)' : '(Medlem)'}
                       </Text>
-                      {userProfile?.familyRole === 'admin' &&
-                      member.userId !== currentUser?.uid ? (
-                        <Button
-                          title="Fjern"
-                          onPress={() => handleRemoveMember(member)}
-                          loading={removingMemberIds.includes(member.userId)}
-                          style={styles.memberRemoveButton}
-                        />
-                      ) : null}
                     </View>
                   );
                 })
@@ -753,8 +941,16 @@ const AccountSettingsScreen = ({ navigation }) => {
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Generelt</Text>
           <Button
+            title="Slet profil"
+            onPress={confirmDeleteProfile}
+            loading={deletingProfile}
+            disabled={deletingProfile || leavingFamily}
+            style={styles.deleteProfileButton}
+          />
+          <Button
             title="Log ud af FamTime"
             onPress={handleLogout}
+            disabled={deletingProfile}
             style={styles.logoutButton}
           />
         </View>
@@ -857,10 +1053,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     marginBottom: spacing.xs,
   },
-  memberRemoveButton: {
-    backgroundColor: colors.error,
-    minWidth: 110,
-  },
   pendingText: {
     fontSize: fontSizes.sm,
     color: colors.mutedText,
@@ -894,6 +1086,10 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     marginTop: spacing.md,
+  },
+  deleteProfileButton: {
+    marginTop: spacing.md,
+    backgroundColor: colors.error,
   },
   logoutButton: {
     marginTop: spacing.md,
