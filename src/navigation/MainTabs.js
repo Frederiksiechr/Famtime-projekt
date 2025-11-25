@@ -5,7 +5,7 @@
  * - Indeholder faner til personlig kalender, familieevents og konto/indstillinger.
  */
 import React from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -14,6 +14,7 @@ import OwnCalendarScreen from '../screens/OwnCalendarScreen';
 import FamilyEventsScreen from '../screens/FamilyEventsScreen';
 import AccountSettingsScreen from '../screens/AccountSettingsScreen';
 import { colors } from '../styles/theme';
+import styles from '../styles/navigation/MainTabsStyles';
 
 const Tab = createBottomTabNavigator();
 
@@ -91,34 +92,3 @@ const MainTabs = () => {
 
 export default MainTabs;
 
-const styles = StyleSheet.create({
-  tabBar: {
-    position: 'absolute',
-    backgroundColor: 'transparent',
-    borderTopWidth: 0,
-    borderTopColor: 'transparent',
-    elevation: 0,
-    shadowOpacity: 0,
-  },
-  tabBarBackground: {
-    flex: 1,
-    backgroundColor: colors.canvas,
-    overflow: 'hidden',
-  },
-  tabBarShadow: {
-    position: 'absolute',
-    top: -24,
-    left: 0,
-    right: 0,
-    height: 24,
-    backgroundColor: 'rgba(75, 46, 18, 0.08)',
-  },
-  tabBarItem: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  iconWrapper: {
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-});

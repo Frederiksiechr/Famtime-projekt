@@ -1,0 +1,443 @@
+import { StyleSheet } from 'react-native';
+import { colors, spacing, fontSizes, radius } from '../theme';
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.canvas,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xl,
+  },
+  container: {
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
+  },
+  heroCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    marginBottom: spacing.lg,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.3,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 14 },
+    elevation: 4,
+  },
+  heroBadge: {
+    alignSelf: 'flex-start',
+    backgroundColor: colors.surfaceMuted,
+    color: colors.primaryDark,
+    fontSize: fontSizes.xs,
+    fontWeight: '700',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xxs,
+    borderRadius: 999,
+    letterSpacing: 0.6,
+    marginBottom: spacing.sm,
+  },
+  title: {
+    fontSize: fontSizes.xxl,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  subtitle: {
+    fontSize: fontSizes.md,
+    color: colors.mutedText,
+    marginTop: spacing.xs,
+  },
+  sectionIntro: {
+    marginTop: spacing.sm,
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+  },
+  card: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.xl,
+    marginBottom: spacing.lg,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 12 },
+    elevation: 4,
+  },
+  cardTitle: {
+    fontSize: fontSizes.lg,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  cardSubtitle: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+    marginTop: spacing.xs,
+    marginBottom: spacing.lg,
+  },
+  emojiSection: {
+    marginBottom: spacing.lg,
+  },
+  emojiLabel: {
+    fontSize: fontSizes.md,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  emojiHint: {
+    marginTop: spacing.xs,
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+  },
+  emojiGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  emojiOption: {
+    width: 56,
+    height: 56,
+    borderRadius: radius.lg,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted,
+  },
+  emojiOptionSelected: {
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(230, 138, 46, 0.18)',
+  },
+  emojiOptionText: {
+    fontSize: 28,
+    fontWeight: '600',
+  },
+  emojiOptionTextSelected: {
+    fontWeight: '800',
+  },
+  successPill: {
+    backgroundColor: 'rgba(230, 138, 46, 0.16)',
+    borderRadius: 999,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    alignSelf: 'flex-start',
+    marginBottom: spacing.sm,
+  },
+  successText: {
+    fontSize: fontSizes.sm,
+    color: colors.primaryDark,
+    fontWeight: '600',
+  },
+  loadingWrapper: {
+    paddingVertical: spacing.lg,
+  },
+  field: {
+    marginBottom: spacing.md,
+  },
+  sectionDivider: {
+    height: 1,
+    backgroundColor: colors.border,
+    marginVertical: spacing.lg,
+  },
+  preferenceTitle: {
+    fontSize: fontSizes.md,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  preferenceHint: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  preferenceSubtitle: {
+    marginTop: spacing.md,
+    marginBottom: spacing.xs,
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+    fontWeight: '600',
+  },
+  ageGroup: {
+    marginBottom: spacing.md,
+  },
+  ageStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  ageButton: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted,
+  },
+  ageButtonText: {
+    fontSize: fontSizes.lg,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  ageValue: {
+    width: 72,
+    textAlign: 'center',
+    fontSize: fontSizes.lg,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  genderGroup: {
+    marginBottom: spacing.md,
+  },
+  genderChipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: spacing.xs,
+  },
+  genderChip: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    marginRight: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  genderChipSelected: {
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(230, 138, 46, 0.18)',
+  },
+  genderChipText: {
+    fontSize: fontSizes.sm,
+    color: colors.text,
+  },
+  genderChipTextSelected: {
+    fontWeight: '700',
+    color: colors.primaryDark,
+  },
+  dayTimeList: {
+    marginTop: spacing.xs,
+  },
+  dayTimeCard: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.surface,
+  },
+  dayTimeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: spacing.xs,
+  },
+  dayTimeLabel: {
+    fontSize: fontSizes.sm,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  dayTimeSummary: {
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+  },
+  dayTimeActions: {
+    alignItems: 'flex-end',
+    marginBottom: spacing.xs,
+  },
+  timePresetWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  timePresetChip: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    marginRight: spacing.xs,
+    marginBottom: spacing.xs,
+    backgroundColor: colors.surface,
+  },
+  timePresetChipSelected: {
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(230, 138, 46, 0.18)',
+  },
+  timePresetLabel: {
+    fontSize: fontSizes.xs,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  timePresetLabelSelected: {
+    color: colors.primaryDark,
+  },
+  timePresetRange: {
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+  },
+  timePresetRangeSelected: {
+    color: colors.primaryDark,
+  },
+  dayChipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginVertical: spacing.xs,
+  },
+  dayChip: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    marginRight: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  dayChipSelected: {
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(230, 138, 46, 0.18)',
+  },
+  dayChipText: {
+    fontSize: fontSizes.sm,
+    color: colors.text,
+  },
+  dayChipTextSelected: {
+    fontWeight: '700',
+    color: colors.primaryDark,
+  },
+  durationGroup: {
+    marginTop: spacing.sm,
+  },
+  durationHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xs,
+  },
+  durationTitle: {
+    fontSize: fontSizes.sm,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  durationChipWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginBottom: spacing.xs,
+  },
+  durationChip: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: 999,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    marginRight: spacing.xs,
+    marginBottom: spacing.xs,
+    backgroundColor: colors.surface,
+  },
+  durationChipSelected: {
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(230, 138, 46, 0.15)',
+  },
+  durationChipText: {
+    fontSize: fontSizes.xs,
+    color: colors.text,
+  },
+  durationChipTextSelected: {
+    color: colors.primaryDark,
+    fontWeight: '600',
+  },
+  timeSelectionRow: {
+    flexDirection: 'row',
+    marginTop: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  timeSelectionButton: {
+    flex: 1,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginRight: spacing.xs,
+    backgroundColor: colors.surface,
+  },
+  timeSelectionButtonRight: {
+    marginRight: 0,
+  },
+  timeSelectionLabel: {
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+    marginBottom: spacing.xxs,
+  },
+  timeSelectionValue: {
+    fontSize: fontSizes.md,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  inlineTimePicker: {
+    marginTop: spacing.xs,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    backgroundColor: colors.surface,
+    padding: spacing.xs,
+  },
+  timePickerCloseButton: {
+    alignSelf: 'flex-end',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+  },
+  timePickerCloseText: {
+    color: colors.primaryDark,
+    fontWeight: '600',
+  },
+  timeSelectionClear: {
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+    textDecorationLine: 'underline',
+  },
+  preferenceFootnote: {
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+  },
+  timeSelectionClearDisabled: {
+    opacity: 0.4,
+  },
+  saveButton: {
+    marginTop: spacing.md,
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.lg,
+  },
+  familyCard: {
+    backgroundColor: colors.surface,
+  },
+  familyInfoText: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+    marginBottom: spacing.xs,
+  },
+  familyInfoValue: {
+    fontWeight: '700',
+    color: colors.text,
+  },
+  copyButton: {
+    marginTop: spacing.sm,
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.lg,
+  },
+  logout: {
+    marginTop: spacing.md,
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.lg,
+  },
+});
+
+export default styles;

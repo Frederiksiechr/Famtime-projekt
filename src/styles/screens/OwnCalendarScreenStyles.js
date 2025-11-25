@@ -1,0 +1,318 @@
+import { StyleSheet } from 'react-native';
+import { colors, spacing, fontSizes, radius } from '../theme';
+
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: colors.canvas,
+  },
+  scrollContent: {
+    flexGrow: 1,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.xl,
+    backgroundColor: colors.canvas,
+  },
+  container: {
+    width: '100%',
+    maxWidth: 720,
+    alignSelf: 'center',
+    gap: spacing.lg,
+  },
+  heroCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    borderWidth: 0,
+    padding: spacing.xl,
+    gap: spacing.sm,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 3,
+  },
+  messagesCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    borderWidth: 0,
+    padding: spacing.lg,
+    gap: spacing.sm,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 2,
+  },
+  title: {
+    fontSize: fontSizes.xxl,
+    fontWeight: '800',
+    color: colors.text,
+  },
+  subtitle: {
+    fontSize: fontSizes.md,
+    color: colors.mutedText,
+    marginTop: spacing.xs,
+  },
+  infoText: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+  },
+  statusText: {
+    color: colors.primaryDark,
+    fontSize: fontSizes.sm,
+    fontWeight: '600',
+  },
+  statusPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(230, 138, 46, 0.16)',
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
+    borderRadius: 999,
+  },
+  infoPill: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    backgroundColor: colors.surfaceMuted,
+  },
+  sectionGroup: {
+    marginBottom: spacing.xl,
+    gap: spacing.md,
+  },
+  sectionCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    borderWidth: 0,
+    padding: spacing.lg,
+    gap: spacing.md,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.08,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+  },
+  eventList: {
+    gap: spacing.md,
+  },
+  sectionHeader: {
+    gap: spacing.xs,
+  },
+  sectionTitle: {
+    fontSize: fontSizes.lg,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  sectionHint: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+    marginTop: spacing.xs,
+  },
+  eventCard: {
+    borderRadius: radius.md,
+    padding: spacing.lg,
+    backgroundColor: colors.surface,
+    gap: spacing.xs,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 2,
+  },
+  eventHeader: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  eventHeaderText: {
+    flex: 1,
+  },
+  eventToggle: {
+    paddingHorizontal: spacing.xs,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.md,
+  },
+  eventToggleIcon: {
+    fontSize: fontSizes.lg,
+    color: colors.mutedText,
+  },
+  eventToggleIconActive: {
+    color: colors.primary,
+  },
+  eventTitle: {
+    fontSize: fontSizes.lg,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  eventTime: {
+    fontSize: fontSizes.md,
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  eventDescription: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+    marginBottom: spacing.xs,
+  },
+  eventMeta: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+    marginBottom: spacing.xs,
+  },
+  approvalRow: {
+    marginBottom: spacing.sm,
+  },
+  approvalBadges: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    gap: spacing.xs,
+    marginTop: spacing.xs,
+  },
+  approvalBadge: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    borderWidth: 2,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+  },
+  approvalBadgePending: {
+    borderColor: colors.border,
+  },
+  approvalBadgeApproved: {
+    borderColor: colors.success,
+  },
+  approvalBadgeUnknown: {
+    borderColor: colors.border,
+    opacity: 0.6,
+  },
+  approvalEmojiText: {
+    fontSize: 22,
+  },
+  eventDetails: {
+    marginTop: spacing.sm,
+    gap: spacing.sm,
+  },
+  pendingChangeBox: {
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    backgroundColor: 'rgba(230, 138, 46, 0.12)',
+    marginBottom: spacing.sm,
+  },
+  pendingChangeTitle: {
+    fontSize: fontSizes.sm,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  pendingChangeText: {
+    fontSize: fontSizes.sm,
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  eventActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  eventActionButton: {
+    flexGrow: 1,
+  },
+  eventActionButtonPrimary: {
+    minWidth: 160,
+  },
+  eventApproveButton: {
+    backgroundColor: colors.primary,
+  },
+  eventRejectButton: {
+    backgroundColor: colors.error,
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(75, 46, 18, 0.45)',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  modalAvoiding: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalWrapper: {
+    width: '100%',
+    maxWidth: 520,
+    maxHeight: '90%',
+  },
+  modalCard: {
+    backgroundColor: colors.background,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    gap: spacing.md,
+  },
+  modalTitle: {
+    fontSize: fontSizes.lg,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  modalInput: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    fontSize: fontSizes.md,
+    color: colors.text,
+    backgroundColor: colors.surface,
+  },
+  modalNotesInput: {
+    minHeight: 80,
+    textAlignVertical: 'top',
+  },
+  modalLabel: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+  },
+  modalDateButton: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    backgroundColor: colors.surfaceMuted,
+  },
+  modalDateText: {
+    fontSize: fontSizes.md,
+    color: colors.text,
+  },
+  cancelToggle: {
+    backgroundColor: '#F5C88B',
+    marginTop: spacing.md,
+  },
+  cancelToggleActive: {
+    backgroundColor: colors.error,
+    marginTop: spacing.md,
+  },
+  cancelHint: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  modalPrimaryButton: {
+    marginTop: spacing.sm,
+  },
+  modalSecondaryButton: {
+    marginTop: spacing.xs,
+    backgroundColor: '#BFA386',
+  },
+});
+
+export default styles;

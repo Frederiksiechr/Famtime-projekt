@@ -6,7 +6,7 @@
  * - NavigationStrategy: AuthStack for uloggede brugere, AppStack for loggede.
  */
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, View, Text, StyleSheet } from 'react-native';
+import { ActivityIndicator, View, Text } from 'react-native';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 
@@ -18,7 +18,8 @@ import CalendarSyncScreen from '../screens/CalendarSyncScreen';
 import FamilySetupScreen from '../screens/FamilySetupScreen';
 import MainTabs from './MainTabs';
 import { auth } from '../lib/firebase';
-import { colors, spacing, fontSizes } from '../styles/theme';
+import { colors } from '../styles/theme';
+import styles from '../styles/navigation/RootNavigatorStyles';
 
 const Stack = createNativeStackNavigator();
 
@@ -97,19 +98,4 @@ const RootNavigator = () => {
     </NavigationContainer>
   );
 };
-
-const styles = StyleSheet.create({
-  loadingContainer: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.background,
-  },
-  loadingText: {
-    marginTop: spacing.md,
-    color: colors.mutedText,
-    fontSize: fontSizes.md,
-  },
-});
-
 export default RootNavigator;
