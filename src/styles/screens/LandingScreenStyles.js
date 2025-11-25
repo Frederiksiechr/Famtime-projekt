@@ -158,36 +158,45 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
     fontWeight: '600',
   },
-  ageGroup: {
+  locationGroup: {
     marginBottom: spacing.md,
   },
-  ageStepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
+  locationHint: {
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
     marginTop: spacing.xs,
     marginBottom: spacing.xs,
   },
-  ageButton: {
-    width: 44,
-    height: 44,
-    borderRadius: radius.md,
+  locationChipsWrap: {
+    flexDirection: 'row',
+    flexWrap: 'nowrap',
+    justifyContent: 'space-between',
+    marginTop: spacing.xs,
+  },
+  locationChip: {
+    flexShrink: 0,
+    minWidth: 96,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: colors.surfaceMuted,
+    marginHorizontal: spacing.xs / 2,
   },
-  ageButtonText: {
-    fontSize: fontSizes.lg,
-    fontWeight: '700',
+  locationChipSelected: {
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(230, 138, 46, 0.18)',
+  },
+  locationChipText: {
+    fontSize: fontSizes.sm,
     color: colors.text,
   },
-  ageValue: {
-    width: 72,
-    textAlign: 'center',
-    fontSize: fontSizes.lg,
+  locationChipTextSelected: {
     fontWeight: '700',
-    color: colors.text,
+    color: colors.primaryDark,
   },
   genderGroup: {
     marginBottom: spacing.md,
@@ -351,6 +360,78 @@ const styles = StyleSheet.create({
   durationChipTextSelected: {
     color: colors.primaryDark,
     fontWeight: '600',
+  },
+  durationCustomCard: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.sm,
+    backgroundColor: colors.surface,
+    marginTop: spacing.xs,
+  },
+  durationCustomHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  durationCustomLabel: {
+    fontSize: fontSizes.sm,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  durationCustomValue: {
+    fontSize: fontSizes.sm,
+    fontWeight: '700',
+    color: colors.primaryDark,
+  },
+  durationStepperRow: {
+    flexDirection: 'row',
+    marginTop: spacing.sm,
+  },
+  durationStepperColumn: {
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  durationStepperColumnLast: {
+    marginRight: 0,
+  },
+  durationStepperLabel: {
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+    marginBottom: spacing.xs,
+  },
+  durationStepper: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    backgroundColor: colors.surfaceMuted,
+  },
+  durationStepperButton: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.sm,
+    backgroundColor: colors.surface,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  durationStepperButtonText: {
+    fontSize: fontSizes.lg,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  durationStepperValue: {
+    fontSize: fontSizes.md,
+    fontWeight: '700',
+    color: colors.text,
+    minWidth: 32,
+    textAlign: 'center',
   },
   timeSelectionRow: {
     flexDirection: 'row',

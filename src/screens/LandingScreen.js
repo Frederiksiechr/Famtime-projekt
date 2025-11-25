@@ -4,7 +4,7 @@
  * - Beskyttet skærm der vises efter login og samler brugerinformation.
  * - Formularen gemmer profiloplysninger i Firestore og giver mulighed for at logge ud.
  */
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -88,10 +88,109 @@ const TIME_WINDOW_PRESETS = [
 
 const CUSTOM_TIME_PRESET = 'custom';
 const isIOS = Platform.OS === 'ios';
-const DURATION_PRESETS = [30, 45, 60, 90, 120, 180];
+const MIN_DURATION_PRESETS = [
+  { label: '30 min', minutes: 30 },
+  { label: '45 min', minutes: 45 },
+  { label: '1 time', minutes: 60 },
+  { label: '1,5 time', minutes: 90 },
+  { label: '2 timer', minutes: 120 },
+  { label: '3 timer', minutes: 180 },
+];
+const MAX_DURATION_PRESETS = [
+  { label: '45 min', minutes: 45 },
+  { label: '1 time', minutes: 60 },
+  { label: '2 timer', minutes: 120 },
+  { label: '3 timer', minutes: 180 },
+  { label: '5+ timer', minutes: 300 },
+];
+const CUSTOM_DURATION_MINUTE_CHOICES = [0, 15, 30, 45];
+const CUSTOM_DURATION_MIN = 0;
+const CUSTOM_DURATION_MAX = 5 * 60;
+
+const formatDurationMinutesLabel = (minutes) => {
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return 'Ikke valgt';
+  }
+  const hours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  const parts = [];
+  if (hours > 0) {
+    parts.push(hours === 1 ? '1 time' : `${hours} timer`);
+  }
+  if (remainder > 0) {
+    parts.push(`${remainder} min`);
+  }
+  if (!parts.length) {
+    parts.push('0 min');
+  }
+  return parts.join(' ');
+};
+
+const clampCustomDurationMinutes = (minutes) => {
+  if (!Number.isFinite(minutes)) {
+    return 0;
+  }
+  if (minutes <= CUSTOM_DURATION_MIN) {
+    return 0;
+  }
+  return Math.max(
+    0,
+    Math.min(CUSTOM_DURATION_MAX, Math.round(minutes))
+  );
+};
+
+const splitDurationMinutes = (minutes) => {
+  if (!Number.isFinite(minutes) || minutes <= 0) {
+    return { hours: 0, minutes: 0 };
+  }
+  const totalHours = Math.floor(minutes / 60);
+  const remainder = minutes % 60;
+  const closestStep = CUSTOM_DURATION_MINUTE_CHOICES.reduce(
+    (closest, step) =>
+      Math.abs(step - remainder) < Math.abs(closest - remainder)
+        ? step
+        : closest,
+    CUSTOM_DURATION_MINUTE_CHOICES[0]
+  );
+  return { hours: totalHours, minutes: closestStep };
+};
+
+const adjustDurationMinutesByPart = (currentMinutes, part, delta) => {
+  const normalizedCurrent = Number.isFinite(currentMinutes)
+    ? currentMinutes
+    : 0;
+  const { hours, minutes } = splitDurationMinutes(normalizedCurrent);
+  let nextHours = hours;
+  let nextMinutes = minutes;
+
+  if (part === 'hour') {
+    nextHours = Math.max(0, nextHours + delta);
+  } else {
+    const currentIndex = Math.max(
+      0,
+      CUSTOM_DURATION_MINUTE_CHOICES.indexOf(nextMinutes)
+    );
+    let nextIndex = currentIndex + delta;
+    if (nextIndex < 0) {
+      if (nextHours === 0) {
+        nextIndex = 0;
+      } else {
+        nextHours = Math.max(0, nextHours - 1);
+        nextIndex = CUSTOM_DURATION_MINUTE_CHOICES.length - 1;
+      }
+    } else if (nextIndex >= CUSTOM_DURATION_MINUTE_CHOICES.length) {
+      nextHours += 1;
+      nextIndex = 0;
+    }
+    nextMinutes = CUSTOM_DURATION_MINUTE_CHOICES[nextIndex];
+  }
+
+  return clampCustomDurationMinutes(nextHours * 60 + nextMinutes);
+};
 const GENDER_OPTIONS = ['Kvinde', 'Mand', 'Andet'];
 const MIN_AGE = 5;
 const MAX_AGE = 100;
+const DANISH_CITY_OPTIONS = ['København', 'Odense', 'Aalborg'];
 
 const toMinutes = (value) => {
   if (typeof value !== 'string') {
@@ -333,8 +432,28 @@ const LandingScreen = ({ navigation, route }) => {
     () => WEEK_DAYS.filter((day) => selectedDayKeys.includes(day.key)),
     [selectedDayKeys]
   );
-  const ageHoldTimeoutRef = useRef(null);
-  const ageHoldIntervalRef = useRef(null);
+  const normalizedLocation =
+    typeof profile.location === 'string' ? profile.location.trim() : '';
+  const hasLegacyLocation =
+    normalizedLocation.length > 0 &&
+    !DANISH_CITY_OPTIONS.includes(normalizedLocation);
+  const selectedLocation = hasLegacyLocation ? '' : normalizedLocation;
+  const minDurationMinutes = useMemo(() => {
+    const value = Number(profile.preferredMinDuration);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }, [profile.preferredMinDuration]);
+  const maxDurationMinutes = useMemo(() => {
+    const value = Number(profile.preferredMaxDuration);
+    return Number.isFinite(value) && value > 0 ? value : 0;
+  }, [profile.preferredMaxDuration]);
+  const minDurationParts = useMemo(
+    () => splitDurationMinutes(minDurationMinutes),
+    [minDurationMinutes]
+  );
+  const maxDurationParts = useMemo(
+    () => splitDurationMinutes(maxDurationMinutes),
+    [maxDurationMinutes]
+  );
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -380,7 +499,8 @@ const LandingScreen = ({ navigation, route }) => {
                 ? String(data.age)
                 : data.age ?? '',
             gender: data.gender ?? '',
-            location: data.location ?? '',
+            location:
+              typeof data.location === 'string' ? data.location.trim() : '',
             familyId: data.familyId ?? '',
             familyRole: data.familyRole ?? '',
             preferredDays: Array.isArray(data.preferredFamilyDays)
@@ -634,6 +754,30 @@ const LandingScreen = ({ navigation, route }) => {
     [clearDurationError]
   );
 
+  const handleDurationStepperChange = useCallback(
+    (field, part, delta) => {
+      clearDurationError(field);
+      setProfile((prev) => {
+        const currentValue = Number(prev[field]);
+        const currentMinutes =
+          Number.isFinite(currentValue) && currentValue > 0
+            ? currentValue
+            : 0;
+        const nextMinutes = adjustDurationMinutesByPart(
+          currentMinutes,
+          part,
+          delta
+        );
+        const nextValue = nextMinutes > 0 ? String(nextMinutes) : '';
+        return {
+          ...prev,
+          [field]: nextValue,
+        };
+      });
+    },
+    [clearDurationError]
+  );
+
   const handleSelectAvatar = (emoji) => {
     if (typeof emoji !== 'string') {
       return;
@@ -675,13 +819,16 @@ const LandingScreen = ({ navigation, route }) => {
     });
   }, []);
 
-  const adjustAge = useCallback((delta) => {
-    setProfile((prev) => {
-      const numeric = Number(prev.age);
-      const base = Number.isFinite(numeric) ? numeric : MIN_AGE;
-      const nextValue = Math.min(MAX_AGE, Math.max(MIN_AGE, base + delta));
-      return { ...prev, age: String(nextValue) };
-    });
+  const handleAgeChange = useCallback((value) => {
+    if (typeof value !== 'string') {
+      return;
+    }
+    const digitsOnly = value.replace(/\D/g, '');
+    const limited = digitsOnly.slice(0, 3);
+    setProfile((prev) => ({
+      ...prev,
+      age: limited,
+    }));
     setFieldErrors((prev) => {
       if (!prev.age) {
         return prev;
@@ -692,39 +839,15 @@ const LandingScreen = ({ navigation, route }) => {
     });
   }, []);
 
-  const clearAgeHoldTimers = useCallback(() => {
-    if (ageHoldTimeoutRef.current) {
-      clearTimeout(ageHoldTimeoutRef.current);
-      ageHoldTimeoutRef.current = null;
+  const handleSelectCity = useCallback((city) => {
+    if (typeof city !== 'string') {
+      return;
     }
-    if (ageHoldIntervalRef.current) {
-      clearInterval(ageHoldIntervalRef.current);
-      ageHoldIntervalRef.current = null;
-    }
+    setProfile((prev) => ({
+      ...prev,
+      location: prev.location === city ? '' : city,
+    }));
   }, []);
-
-  const handleAgePressIn = useCallback(
-    (delta) => {
-      adjustAge(delta);
-      clearAgeHoldTimers();
-      ageHoldTimeoutRef.current = setTimeout(() => {
-        ageHoldIntervalRef.current = setInterval(() => {
-          adjustAge(delta);
-        }, 120);
-      }, 350);
-    },
-    [adjustAge, clearAgeHoldTimers]
-  );
-
-  const handleAgePressOut = useCallback(() => {
-    clearAgeHoldTimers();
-  }, [clearAgeHoldTimers]);
-
-  useEffect(() => {
-    return () => {
-      clearAgeHoldTimers();
-    };
-  }, [clearAgeHoldTimers]);
 
   const validateProfile = () => {
     const nextErrors = {};
@@ -732,10 +855,16 @@ const LandingScreen = ({ navigation, route }) => {
       nextErrors.name = 'Navn skal udfyldes.';
     }
 
-    if (!profile.age.trim()) {
+    const trimmedAge = profile.age.trim();
+    if (!trimmedAge) {
       nextErrors.age = 'Alder skal udfyldes.';
-    } else if (!/^\d+$/.test(profile.age.trim())) {
+    } else if (!/^\d+$/.test(trimmedAge)) {
       nextErrors.age = 'Alder skal være et tal.';
+    } else {
+      const numericAge = Number(trimmedAge);
+      if (numericAge < MIN_AGE || numericAge > MAX_AGE) {
+        nextErrors.age = `Alder skal være mellem ${MIN_AGE} og ${MAX_AGE}.`;
+      }
     }
 
     if (!profile.gender.trim()) {
@@ -774,15 +903,15 @@ const LandingScreen = ({ navigation, route }) => {
     const maxDurationValue = maxDurationRaw ? Number(maxDurationRaw) : null;
 
     if (minDurationRaw && (!Number.isFinite(minDurationValue) || minDurationValue <= 0)) {
-      nextErrors.preferredMinDuration = 'Min. varighed skal vre et positivt tal (minutter).';
+      nextErrors.preferredMinDuration = 'Kortest familietid skal være et positivt tal (minutter).';
     }
 
     if (maxDurationRaw && (!Number.isFinite(maxDurationValue) || maxDurationValue <= 0)) {
-      nextErrors.preferredMaxDuration = 'Max. varighed skal vre et positivt tal (minutter).';
+      nextErrors.preferredMaxDuration = 'Længst familietid skal være et positivt tal (minutter).';
     }
 
     if (Number.isFinite(minDurationValue) && Number.isFinite(maxDurationValue) && maxDurationValue < minDurationValue) {
-      nextErrors.preferredMaxDuration = 'Max. varighed skal vre strre end min. varighed.';
+      nextErrors.preferredMaxDuration = 'Længst familietid skal være større end kortest familietid.';
     }
 
     setFieldErrors(nextErrors);
@@ -804,8 +933,7 @@ const LandingScreen = ({ navigation, route }) => {
       setSavingProfile(true);
 
         const sanitizedAge = Number(profile.age.trim());
-        const sanitizedLocation =
-          typeof profile.location === 'string' ? profile.location.trim() : '';
+        const sanitizedLocation = selectedLocation;
         const sanitizedEmoji =
           typeof profile.avatarEmoji === 'string' && profile.avatarEmoji.trim().length
             ? profile.avatarEmoji.trim()
@@ -1029,39 +1157,17 @@ const LandingScreen = ({ navigation, route }) => {
                     error={fieldErrors.name}
                     style={styles.field}
                   />
-                  <View style={styles.ageGroup}>
-                    <Text style={styles.preferenceSubtitle}>Alder</Text>
-                    <View style={styles.ageStepper}>
-                      <Pressable
-                        onPressIn={() => handleAgePressIn(-1)}
-                        onPressOut={handleAgePressOut}
-                        style={styles.ageButton}
-                        accessibilityRole="button"
-                        accessibilityLabel="Mindsk alder"
-                      >
-                        <Text style={styles.ageButtonText}>-</Text>
-                      </Pressable>
-                      <Text style={styles.ageValue}>
-                        {profile.age && /^\d+$/.test(profile.age)
-                          ? profile.age
-                          : '—'}
-                      </Text>
-                      <Pressable
-                        onPressIn={() => handleAgePressIn(1)}
-                        onPressOut={handleAgePressOut}
-                        style={styles.ageButton}
-                        accessibilityRole="button"
-                        accessibilityLabel="Øg alder"
-                      >
-                        <Text style={styles.ageButtonText}>+</Text>
-                      </Pressable>
-                    </View>
-                    {fieldErrors.age ? (
-                      <Text style={styles.validationMessage}>
-                        {fieldErrors.age}
-                      </Text>
-                    ) : null}
-                  </View>
+                  <FormInput
+                    label="Alder"
+                    value={profile.age}
+                    onChangeText={handleAgeChange}
+                    placeholder="Fx 12"
+                    keyboardType="number-pad"
+                    inputMode="numeric"
+                    maxLength={3}
+                    error={fieldErrors.age}
+                    style={styles.field}
+                  />
                   <View style={styles.genderGroup}>
                     <Text style={styles.preferenceSubtitle}>Køn</Text>
                     <View style={styles.genderChipsWrap}>
@@ -1097,14 +1203,42 @@ const LandingScreen = ({ navigation, route }) => {
                       </Text>
                     ) : null}
                   </View>
-                <FormInput
-                  label="Lokation (valgfrit)"
-                  value={profile.location}
-                  onChangeText={updateField('location')}
-                  placeholder="Byen du bor i"
-                  error={fieldErrors.location}
-                  style={styles.field}
-                />
+                <View style={styles.locationGroup}>
+                  <Text style={styles.preferenceSubtitle}>Lokation (valgfrit)</Text>
+                  <Text style={styles.locationHint}>Vælg den storby du bor tættest på</Text>
+                  <View style={styles.locationChipsWrap}>
+                    {DANISH_CITY_OPTIONS.map((city) => {
+                      const selected = selectedLocation === city;
+                      return (
+                        <Pressable
+                          key={city}
+                          onPress={() => handleSelectCity(city)}
+                          style={[
+                            styles.locationChip,
+                            selected ? styles.locationChipSelected : null,
+                          ]}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected }}
+                          accessibilityLabel={`Vælg ${city}`}
+                        >
+                          <Text
+                            style={[
+                              styles.locationChipText,
+                              selected ? styles.locationChipTextSelected : null,
+                            ]}
+                          >
+                            {city}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  {hasLegacyLocation ? (
+                    <Text style={styles.validationMessage}>
+                      {`Din tidligere lokation "${normalizedLocation}" understøttes ikke længere. Vælg en by fra listen.`}
+                    </Text>
+                  ) : null}
+                </View>
 
                 <View style={styles.sectionDivider} />
 
@@ -1342,7 +1476,7 @@ const LandingScreen = ({ navigation, route }) => {
                 </View>
                 <View style={styles.durationGroup}>
                   <View style={styles.durationHeader}>
-                    <Text style={styles.durationTitle}>Min. varighed</Text>
+                    <Text style={styles.durationTitle}>Kortest familietid</Text>
                     <Pressable
                       onPress={() => handleClearDuration('preferredMinDuration')}
                     >
@@ -1359,7 +1493,7 @@ const LandingScreen = ({ navigation, route }) => {
                     </Pressable>
                   </View>
                   <View style={styles.durationChipWrap}>
-                    {DURATION_PRESETS.map((minutes) => {
+                    {MIN_DURATION_PRESETS.map(({ label, minutes }) => {
                       const isSelected =
                         Number(profile.preferredMinDuration) === minutes;
                       return (
@@ -1379,26 +1513,113 @@ const LandingScreen = ({ navigation, route }) => {
                               isSelected ? styles.durationChipTextSelected : null,
                             ]}
                           >
-                            {minutes} min
+                            {label}
                           </Text>
                         </Pressable>
                       );
                     })}
                   </View>
-                  <FormInput
-                    label="Min. varighed (minutter, valgfrit)"
-                    value={profile.preferredMinDuration}
-                    onChangeText={updateField('preferredMinDuration')}
-                    keyboardType="number-pad"
-                    placeholder="Fx 45"
-                    autoCapitalize="none"
-                    error={fieldErrors.preferredMinDuration}
-                    style={styles.field}
-                  />
+                  <View style={styles.durationCustomCard}>
+                    <View style={styles.durationCustomHeader}>
+                      <Text style={styles.durationCustomLabel}>Tilpas selv</Text>
+                      <Text style={styles.durationCustomValue}>
+                        {formatDurationMinutesLabel(minDurationMinutes)}
+                      </Text>
+                    </View>
+                    <View style={styles.durationStepperRow}>
+                      <View
+                        style={[
+                          styles.durationStepperColumn,
+                          styles.durationStepperColumnLast,
+                        ]}
+                      >
+                        <Text style={styles.durationStepperLabel}>Timer</Text>
+                        <View style={styles.durationStepper}>
+                          <Pressable
+                            style={styles.durationStepperButton}
+                            onPress={() =>
+                              handleDurationStepperChange(
+                                'preferredMinDuration',
+                                'hour',
+                                -1
+                              )
+                            }
+                            accessibilityRole="button"
+                            accessibilityLabel="Mindsk timer for kortest familietid"
+                          >
+                            <Text style={styles.durationStepperButtonText}>-</Text>
+                          </Pressable>
+                          <Text style={styles.durationStepperValue}>
+                            {minDurationParts.hours}
+                          </Text>
+                          <Pressable
+                            style={styles.durationStepperButton}
+                            onPress={() =>
+                              handleDurationStepperChange(
+                                'preferredMinDuration',
+                                'hour',
+                                1
+                              )
+                            }
+                            accessibilityRole="button"
+                            accessibilityLabel="Øg timer for kortest familietid"
+                          >
+                            <Text style={styles.durationStepperButtonText}>+</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                      <View
+                        style={[
+                          styles.durationStepperColumn,
+                          styles.durationStepperColumnLast,
+                        ]}
+                      >
+                        <Text style={styles.durationStepperLabel}>Minutter</Text>
+                        <View style={styles.durationStepper}>
+                          <Pressable
+                            style={styles.durationStepperButton}
+                            onPress={() =>
+                              handleDurationStepperChange(
+                                'preferredMinDuration',
+                                'minute',
+                                -1
+                              )
+                            }
+                            accessibilityRole="button"
+                            accessibilityLabel="Mindsk minutter for kortest familietid"
+                          >
+                            <Text style={styles.durationStepperButtonText}>-</Text>
+                          </Pressable>
+                          <Text style={styles.durationStepperValue}>
+                            {minDurationParts.minutes}
+                          </Text>
+                          <Pressable
+                            style={styles.durationStepperButton}
+                            onPress={() =>
+                              handleDurationStepperChange(
+                                'preferredMinDuration',
+                                'minute',
+                                1
+                              )
+                            }
+                            accessibilityRole="button"
+                            accessibilityLabel="Øg minutter for kortest familietid"
+                          >
+                            <Text style={styles.durationStepperButtonText}>+</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                  {fieldErrors.preferredMinDuration ? (
+                    <Text style={styles.validationMessage}>
+                      {fieldErrors.preferredMinDuration}
+                    </Text>
+                  ) : null}
                 </View>
                 <View style={styles.durationGroup}>
                   <View style={styles.durationHeader}>
-                    <Text style={styles.durationTitle}>Max. varighed</Text>
+                    <Text style={styles.durationTitle}>Længst familietid</Text>
                     <Pressable
                       onPress={() => handleClearDuration('preferredMaxDuration')}
                     >
@@ -1415,7 +1636,7 @@ const LandingScreen = ({ navigation, route }) => {
                     </Pressable>
                   </View>
                   <View style={styles.durationChipWrap}>
-                    {DURATION_PRESETS.map((minutes) => {
+                    {MAX_DURATION_PRESETS.map(({ label, minutes }) => {
                       const isSelected =
                         Number(profile.preferredMaxDuration) === minutes;
                       return (
@@ -1435,22 +1656,99 @@ const LandingScreen = ({ navigation, route }) => {
                               isSelected ? styles.durationChipTextSelected : null,
                             ]}
                           >
-                            {minutes} min
+                            {label}
                           </Text>
                         </Pressable>
                       );
                     })}
                   </View>
-                  <FormInput
-                    label="Max. varighed (minutter, valgfrit)"
-                    value={profile.preferredMaxDuration}
-                    onChangeText={updateField('preferredMaxDuration')}
-                    keyboardType="number-pad"
-                    placeholder="Fx 120"
-                    autoCapitalize="none"
-                    error={fieldErrors.preferredMaxDuration}
-                    style={styles.field}
-                  />
+                  <View style={styles.durationCustomCard}>
+                    <View style={styles.durationCustomHeader}>
+                      <Text style={styles.durationCustomLabel}>Tilpas selv</Text>
+                      <Text style={styles.durationCustomValue}>
+                        {formatDurationMinutesLabel(maxDurationMinutes)}
+                      </Text>
+                    </View>
+                    <View style={styles.durationStepperRow}>
+                      <View style={styles.durationStepperColumn}>
+                        <Text style={styles.durationStepperLabel}>Timer</Text>
+                        <View style={styles.durationStepper}>
+                          <Pressable
+                            style={styles.durationStepperButton}
+                            onPress={() =>
+                              handleDurationStepperChange(
+                                'preferredMaxDuration',
+                                'hour',
+                                -1
+                              )
+                            }
+                            accessibilityRole="button"
+                            accessibilityLabel="Mindsk timer for længst familietid"
+                          >
+                            <Text style={styles.durationStepperButtonText}>-</Text>
+                          </Pressable>
+                          <Text style={styles.durationStepperValue}>
+                            {maxDurationParts.hours}
+                          </Text>
+                          <Pressable
+                            style={styles.durationStepperButton}
+                            onPress={() =>
+                              handleDurationStepperChange(
+                                'preferredMaxDuration',
+                                'hour',
+                                1
+                              )
+                            }
+                            accessibilityRole="button"
+                            accessibilityLabel="Øg timer for længst familietid"
+                          >
+                            <Text style={styles.durationStepperButtonText}>+</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                      <View style={styles.durationStepperColumn}>
+                        <Text style={styles.durationStepperLabel}>Minutter</Text>
+                        <View style={styles.durationStepper}>
+                          <Pressable
+                            style={styles.durationStepperButton}
+                            onPress={() =>
+                              handleDurationStepperChange(
+                                'preferredMaxDuration',
+                                'minute',
+                                -1
+                              )
+                            }
+                            accessibilityRole="button"
+                            accessibilityLabel="Mindsk minutter for længst familietid"
+                          >
+                            <Text style={styles.durationStepperButtonText}>-</Text>
+                          </Pressable>
+                          <Text style={styles.durationStepperValue}>
+                            {maxDurationParts.minutes}
+                          </Text>
+                          <Pressable
+                            style={styles.durationStepperButton}
+                            onPress={() =>
+                              handleDurationStepperChange(
+                                'preferredMaxDuration',
+                                'minute',
+                                1
+                              )
+                            }
+                            accessibilityRole="button"
+                            accessibilityLabel="Øg minutter for længst familietid"
+                          >
+                            <Text style={styles.durationStepperButtonText}>+</Text>
+                          </Pressable>
+                        </View>
+                      </View>
+                    </View>
+                  </View>
+                  {fieldErrors.preferredMaxDuration ? (
+                    <Text style={styles.validationMessage}>
+                      {fieldErrors.preferredMaxDuration}
+                    </Text>
+                  ) : null}
                 </View>
                 <Text style={styles.preferenceFootnote}>
                   Lad felterne st tomme, hvis I er fleksible med bde tidsrum og varighed.
