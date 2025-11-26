@@ -670,11 +670,6 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
     paddingHorizontal: spacing.lg,
   },
-  logout: {
-    marginTop: spacing.md,
-    alignSelf: 'flex-start',
-    paddingHorizontal: spacing.lg,
-  },
 });
 
 export default styles;

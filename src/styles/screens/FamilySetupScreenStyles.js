@@ -32,20 +32,60 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
     marginBottom: spacing.lg,
   },
-  familyIdText: {
+  heroCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.lg,
+    padding: spacing.lg,
+    marginBottom: spacing.lg,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.18,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 3,
+  },
+  heroTitle: {
+    fontSize: fontSizes.lg,
+    fontWeight: '700',
+    color: colors.text,
+    marginBottom: spacing.xs,
+  },
+  heroSubtitle: {
+    fontSize: fontSizes.md,
+    color: colors.mutedText,
+    marginBottom: spacing.md,
+  },
+  familyCodeRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  familyCodePill: {
+    flex: 1,
+    backgroundColor: colors.canvas,
+    borderRadius: radius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+  },
+  familyCodeLabel: {
     fontSize: fontSizes.sm,
     color: colors.mutedText,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.xs / 2,
   },
-  copyButton: {
-    alignSelf: 'flex-start',
+  familyCodeValue: {
+    fontSize: fontSizes.md,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  copyIdButton: {
+    marginLeft: spacing.sm,
     backgroundColor: colors.primary,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     borderRadius: radius.md,
-    marginBottom: spacing.sm,
+    minWidth: 110,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
-  copyButtonText: {
+  copyIdButtonText: {
     color: colors.primaryText,
     fontSize: fontSizes.sm,
     fontWeight: '600',
@@ -53,7 +93,7 @@ const styles = StyleSheet.create({
   copyFeedback: {
     fontSize: fontSizes.sm,
     color: colors.primary,
-    marginBottom: spacing.md,
+    marginTop: spacing.sm,
   },
   modeSwitch: {
     flexDirection: 'row',
@@ -86,33 +126,6 @@ const styles = StyleSheet.create({
   },
   field: {
     marginBottom: spacing.md,
-  },
-  addEmailButton: {
-    marginBottom: spacing.md,
-  },
-  inviteList: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: spacing.lg,
-  },
-  inviteChip: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    borderRadius: radius.sm,
-    backgroundColor: 'rgba(230, 138, 46, 0.18)',
-    marginRight: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  inviteChipText: {
-    color: colors.text,
-    fontSize: fontSizes.sm,
-    marginRight: spacing.xs,
-  },
-  inviteChipRemove: {
-    color: colors.mutedText,
-    fontSize: fontSizes.sm,
   },
   deleteButton: {
     marginTop: spacing.lg,
@@ -161,10 +174,6 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.md,
     color: colors.mutedText,
     marginBottom: spacing.xs,
-  },
-  highlight: {
-    color: colors.primary,
-    fontWeight: '700',
   },
 });
 

@@ -27,16 +27,33 @@ const styles = StyleSheet.create({
     shadowRadius: 18,
     shadowOffset: { width: 0, height: 12 },
     elevation: 4,
+    alignItems: 'center',
   },
   title: {
     fontSize: fontSizes.xxl,
     fontWeight: '800',
     color: colors.text,
+    textAlign: 'center',
   },
   subtitle: {
     fontSize: fontSizes.md,
     color: colors.mutedText,
     marginTop: spacing.xs,
+    textAlign: 'center',
+  },
+  heroButton: {
+    marginTop: spacing.lg,
+    backgroundColor: colors.primary,
+    borderRadius: radius.lg,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.sm,
+    minWidth: 220,
+  },
+  heroButtonText: {
+    textAlign: 'center',
+    color: colors.primaryText,
+    fontSize: fontSizes.md,
+    fontWeight: '700',
   },
   card: {
     backgroundColor: 'transparent',
