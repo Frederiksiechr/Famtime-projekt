@@ -31,6 +31,10 @@ import findMutualAvailability, { availabilityUtils } from '../lib/availability';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import styles from '../styles/screens/FamilyEventsScreenStyles';
+import {
+  FAMILY_PREFERENCE_MODES,
+  normalizeFamilyPreferenceMode,
+} from '../constants/familyPreferenceModes';
 
 const DEFAULT_EVENT_DURATION_MINUTES = 60;
 const MIN_EVENT_DURATION_MINUTES = 15;
@@ -442,7 +446,7 @@ const FamilyEventsScreen = () => {
       return 'Ingen ledige datoer fundet endnu.';
     }
     if (!activeSuggestion) {
-      return 'Vaelg en dato for at se detaljer.';
+      return 'Vælg en dato for at se detaljer.';
     }
     const index = sortedSuggestions.findIndex((item) => item.id === activeSuggestion.id);
     return `Forslag ${index + 1} af ${sortedSuggestions.length}`;
@@ -494,7 +498,7 @@ const FamilyEventsScreen = () => {
       ...baseCards,
       {
         key: 'custom',
-        label: 'Vaelg selv',
+        label: 'Vælg selv',
         helper: 'Tilpas titel og beskrivelse selv.',
         description: 'Start fra bunden og skriv jeres egen ide.',
         summary: '',
@@ -545,48 +549,56 @@ const FamilyEventsScreen = () => {
           )
         );
 
-        const nextPreferences = {};
+        const rawPreferenceMap = {};
         snapshots.forEach((docSnapshot, index) => {
-          if (docSnapshot && docSnapshot.exists) {
-            const data = docSnapshot.data() ?? {};
-            const timeWindows =
-              data?.preferredFamilyTimeWindows && typeof data.preferredFamilyTimeWindows === 'object'
-                ? data.preferredFamilyTimeWindows
-                : null;
-            const minDurationMinutes =
-              typeof data?.preferredFamilyMinDurationMinutes === 'number'
-                ? data.preferredFamilyMinDurationMinutes
-                : null;
-            const maxDurationMinutes =
-              typeof data?.preferredFamilyMaxDurationMinutes === 'number'
-                ? data.preferredFamilyMaxDurationMinutes
-                : null;
-            const preferredDurationMinutes =
-              typeof data?.preferredFamilyPreferredDurationMinutes === 'number'
-                ? data.preferredFamilyPreferredDurationMinutes
-                : null;
-            const slotStepMinutes =
-              typeof data?.preferredFamilySlotStepMinutes === 'number'
-                ? data.preferredFamilySlotStepMinutes
-                : null;
-            const maxSuggestionDaysPerWeek =
-              typeof data?.preferredFamilyMaxSuggestionDaysPerWeek === 'number'
-                ? data.preferredFamilyMaxSuggestionDaysPerWeek
-                : null;
-            const bufferBeforeMinutes =
-              typeof data?.preferredFamilyBufferBeforeMinutes === 'number'
-                ? data.preferredFamilyBufferBeforeMinutes
-                : null;
-            const bufferAfterMinutes =
-              typeof data?.preferredFamilyBufferAfterMinutes === 'number'
-                ? data.preferredFamilyBufferAfterMinutes
-                : null;
-            const timeZone =
-              typeof data?.preferredFamilyTimeZone === 'string' && data.preferredFamilyTimeZone.trim().length
-                ? data.preferredFamilyTimeZone.trim()
-                : null;
-
-            nextPreferences[memberIds[index]] = {
+          if (!docSnapshot || !docSnapshot.exists) {
+            return;
+          }
+          const memberId = memberIds[index];
+          const data = docSnapshot.data() ?? {};
+          const timeWindows =
+            data?.preferredFamilyTimeWindows && typeof data.preferredFamilyTimeWindows === 'object'
+              ? data.preferredFamilyTimeWindows
+              : null;
+          const minDurationMinutes =
+            typeof data?.preferredFamilyMinDurationMinutes === 'number'
+              ? data.preferredFamilyMinDurationMinutes
+              : null;
+          const maxDurationMinutes =
+            typeof data?.preferredFamilyMaxDurationMinutes === 'number'
+              ? data.preferredFamilyMaxDurationMinutes
+              : null;
+          const preferredDurationMinutes =
+            typeof data?.preferredFamilyPreferredDurationMinutes === 'number'
+              ? data.preferredFamilyPreferredDurationMinutes
+              : null;
+          const slotStepMinutes =
+            typeof data?.preferredFamilySlotStepMinutes === 'number'
+              ? data.preferredFamilySlotStepMinutes
+              : null;
+          const maxSuggestionDaysPerWeek =
+            typeof data?.preferredFamilyMaxSuggestionDaysPerWeek === 'number'
+              ? data.preferredFamilyMaxSuggestionDaysPerWeek
+              : null;
+          const bufferBeforeMinutes =
+            typeof data?.preferredFamilyBufferBeforeMinutes === 'number'
+              ? data.preferredFamilyBufferBeforeMinutes
+              : null;
+          const bufferAfterMinutes =
+            typeof data?.preferredFamilyBufferAfterMinutes === 'number'
+              ? data.preferredFamilyBufferAfterMinutes
+              : null;
+          const timeZone =
+            typeof data?.preferredFamilyTimeZone === 'string' && data.preferredFamilyTimeZone.trim().length
+              ? data.preferredFamilyTimeZone.trim()
+              : null;
+          rawPreferenceMap[memberId] = {
+            mode: normalizeFamilyPreferenceMode(data.familyPreferenceMode),
+            followUserId:
+              typeof data?.familyPreferenceFollowUserId === 'string'
+                ? data.familyPreferenceFollowUserId.trim()
+                : '',
+            own: {
               days: Array.isArray(data.preferredFamilyDays)
                 ? data.preferredFamilyDays
                 : [],
@@ -599,12 +611,78 @@ const FamilyEventsScreen = () => {
               bufferBeforeMinutes,
               bufferAfterMinutes,
               timeZone,
-            };
+            },
+          };
+        });
+
+        const createEmptyPreferences = () => ({
+          days: [],
+          timeWindows: null,
+          minDurationMinutes: null,
+          maxDurationMinutes: null,
+          preferredDurationMinutes: null,
+          slotStepMinutes: null,
+          maxSuggestionDaysPerWeek: null,
+          bufferBeforeMinutes: null,
+          bufferAfterMinutes: null,
+          timeZone: null,
+        });
+
+        const resolvedPreferences = {};
+        const resolvePreferenceEntry = (memberId, chain = new Set()) => {
+          if (resolvedPreferences[memberId]) {
+            return resolvedPreferences[memberId];
           }
+          const entry = rawPreferenceMap[memberId];
+          if (!entry) {
+            const empty = createEmptyPreferences();
+            resolvedPreferences[memberId] = empty;
+            return empty;
+          }
+          if (entry.mode === FAMILY_PREFERENCE_MODES.NONE) {
+            const empty = createEmptyPreferences();
+            resolvedPreferences[memberId] = empty;
+            return empty;
+          }
+          if (entry.mode === FAMILY_PREFERENCE_MODES.FOLLOW) {
+            const targetId = entry.followUserId;
+            if (
+              targetId &&
+              targetId !== memberId &&
+              rawPreferenceMap[targetId] &&
+              !chain.has(targetId)
+            ) {
+              chain.add(memberId);
+              const resolvedTarget = resolvePreferenceEntry(targetId, chain);
+              chain.delete(memberId);
+              const clone = {
+                ...resolvedTarget,
+                days: Array.isArray(resolvedTarget?.days)
+                  ? [...resolvedTarget.days]
+                  : [],
+              };
+              resolvedPreferences[memberId] = clone;
+              return clone;
+            }
+            const empty = createEmptyPreferences();
+            resolvedPreferences[memberId] = empty;
+            return empty;
+          }
+          const normalized = {
+            ...createEmptyPreferences(),
+            ...entry.own,
+            days: Array.isArray(entry.own?.days) ? entry.own.days : [],
+          };
+          resolvedPreferences[memberId] = normalized;
+          return normalized;
+        };
+
+        memberIds.forEach((memberId) => {
+          resolvePreferenceEntry(memberId);
         });
 
         if (isActive) {
-          setFamilyPreferences(nextPreferences);
+          setFamilyPreferences(resolvedPreferences);
         }
       } catch (_error) {
         if (isActive) {

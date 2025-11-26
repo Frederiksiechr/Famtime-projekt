@@ -12,6 +12,7 @@ import {
   ScrollView,
   Pressable,
   Platform,
+  Switch,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -27,6 +28,12 @@ import {
   AVATAR_EMOJIS,
   DEFAULT_AVATAR_EMOJI,
 } from '../constants/avatarEmojis';
+import DurationRangeSlider from '../components/DurationRangeSlider';
+import {
+  FAMILY_PREFERENCE_MODE_OPTIONS,
+  FAMILY_PREFERENCE_MODES,
+  normalizeFamilyPreferenceMode,
+} from '../constants/familyPreferenceModes';
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 const WEEK_DAYS = [
@@ -50,14 +57,14 @@ const TIME_WINDOW_PRESETS = [
     display: 'Ingen tidsrum',
   },
   {
-    key: 'earlybird',
+    key: 'morning',
     label: 'Morgen',
-    start: '06:30',
+    start: '06:00',
     end: '09:00',
-    display: '06:30-09:00',
+    display: '06:00-09:00',
   },
   {
-    key: 'midday',
+    key: 'forenoon',
     label: 'Formiddag',
     start: '09:00',
     end: '12:00',
@@ -66,16 +73,16 @@ const TIME_WINDOW_PRESETS = [
   {
     key: 'afternoon',
     label: 'Eftermiddag',
-    start: '13:00',
+    start: '12:00',
     end: '16:00',
-    display: '13:00-16:00',
+    display: '12:00-16:00',
   },
   {
     key: 'evening',
     label: 'Aften',
-    start: '17:00',
+    start: '16:00',
     end: '20:00',
-    display: '17:00-20:00',
+    display: '16:00-20:00',
   },
   {
     key: 'late',
@@ -84,10 +91,84 @@ const TIME_WINDOW_PRESETS = [
     end: '23:59',
     display: '20:00-23:59',
   },
+  {
+    key: 'allday',
+    label: 'Alle tider',
+    start: '06:00',
+    end: '23:59',
+    display: '06:00-23:59',
+  },
 ];
 
 const CUSTOM_TIME_PRESET = 'custom';
 const isIOS = Platform.OS === 'ios';
+const DEFAULT_CUSTOM_START = '17:00';
+const DEFAULT_CUSTOM_END = '19:00';
+const MAX_TIME_SLOTS_PER_DAY = 3;
+const QUICK_TIME_PRESETS = TIME_WINDOW_PRESETS.filter(
+  (preset) => preset.key !== 'none'
+);
+
+let slotIdCounter = 0;
+const createSlotId = () => {
+  slotIdCounter += 1;
+  return `slot-${slotIdCounter}`;
+};
+
+const findPresetForWindow = (start, end) => {
+  const match = TIME_WINDOW_PRESETS.find(
+    (preset) =>
+      preset.start &&
+      preset.end &&
+      preset.start === start &&
+      preset.end === end
+  );
+  return match ? match.key : CUSTOM_TIME_PRESET;
+};
+
+const createSlot = ({ presetKey, start, end } = {}) => {
+  const normalizedPreset =
+    presetKey && presetKey !== 'none' ? presetKey : CUSTOM_TIME_PRESET;
+  if (
+    normalizedPreset !== CUSTOM_TIME_PRESET &&
+    typeof start !== 'string' &&
+    typeof end !== 'string'
+  ) {
+    const preset = TIME_WINDOW_PRESETS.find(
+      (item) => item.key === normalizedPreset
+    );
+    if (preset?.start && preset?.end) {
+      return {
+        id: createSlotId(),
+        presetKey: preset.key,
+        start: preset.start,
+        end: preset.end,
+      };
+    }
+  }
+  return {
+    id: createSlotId(),
+    presetKey: normalizedPreset,
+    start: typeof start === 'string' && start.length ? start : DEFAULT_CUSTOM_START,
+    end: typeof end === 'string' && end.length ? end : DEFAULT_CUSTOM_END,
+  };
+};
+
+const createEmptyDaySelection = () => ({
+  slots: [],
+});
+
+const arraysEqual = (a = [], b = []) => {
+  if (a.length !== b.length) {
+    return false;
+  }
+  for (let index = 0; index < a.length; index += 1) {
+    if (a[index] !== b[index]) {
+      return false;
+    }
+  }
+  return true;
+};
 const MIN_DURATION_PRESETS = [
   { label: '30 min', minutes: 30 },
   { label: '45 min', minutes: 45 },
@@ -124,6 +205,29 @@ const formatDurationMinutesLabel = (minutes) => {
     parts.push('0 min');
   }
   return parts.join(' ');
+};
+
+const buildTimeWindowPayload = (selections) => {
+  const payload = {};
+  WEEK_DAYS.forEach(({ key }) => {
+    const slots = selections[key]?.slots ?? [];
+    const normalizedSlots = slots
+      .map((slot) => {
+        const start =
+          typeof slot.start === 'string' ? slot.start.trim() : '';
+        const end =
+          typeof slot.end === 'string' ? slot.end.trim() : '';
+        if (!isValidTimeRange(start, end)) {
+          return null;
+        }
+        return { start, end };
+      })
+      .filter(Boolean);
+    if (normalizedSlots.length) {
+      payload[key] = normalizedSlots;
+    }
+  });
+  return Object.keys(payload).length ? payload : null;
 };
 
 const clampCustomDurationMinutes = (minutes) => {
@@ -315,7 +419,7 @@ const hasCompletedProfile = (data) => {
 const createInitialDayTimeSelections = () => {
   const map = {};
   WEEK_DAYS.forEach((day) => {
-    map[day.key] = { presetKey: 'none', start: '', end: '' };
+    map[day.key] = createEmptyDaySelection();
   });
   return map;
 };
@@ -352,34 +456,39 @@ const hydrateDayTimeSelections = (
     ? { start: fallbackStart, end: fallbackEnd }
     : null;
 
-  const readListWindow = (list) => {
-    if (Array.isArray(list) && list.length) {
-      return readWindowEntry(list[0]);
+  const readWindowEntries = (list) => {
+    const entries = [];
+    if (Array.isArray(list)) {
+      list.forEach((item) => {
+        const entry = readWindowEntry(item);
+        if (entry) {
+          entries.push(entry);
+        }
+      });
+    } else if (list && typeof list === 'object') {
+      const entry = readWindowEntry(list);
+      if (entry) {
+        entries.push(entry);
+      }
     }
-    if (list && typeof list === 'object') {
-      return readWindowEntry(list);
-    }
-    return null;
+    return entries;
   };
 
-  const defaultWindow =
-    readListWindow(timeWindows?.default) || fallbackWindow;
+  const defaultEntries =
+    readWindowEntries(timeWindows?.default) ||
+    (fallbackWindow ? [fallbackWindow] : []);
 
   WEEK_DAYS.forEach(({ key }) => {
-    const windowEntry =
-      readListWindow(timeWindows?.[key]) || defaultWindow;
-    if (windowEntry) {
-      const presetMatch = TIME_WINDOW_PRESETS.find(
-        (preset) =>
-          preset.start === windowEntry.start &&
-          preset.end === windowEntry.end &&
-          preset.start &&
-          preset.end
-      );
+    const entries = readWindowEntries(timeWindows?.[key]);
+    const sourceEntries = entries.length ? entries : defaultEntries;
+    if (sourceEntries.length) {
       selections[key] = {
-        presetKey: presetMatch ? presetMatch.key : CUSTOM_TIME_PRESET,
-        start: windowEntry.start,
-        end: windowEntry.end,
+        slots: sourceEntries.map((entry) => ({
+          id: createSlotId(),
+          presetKey: findPresetForWindow(entry.start, entry.end),
+          start: entry.start,
+          end: entry.end,
+        })),
       };
     }
   });
@@ -405,12 +514,16 @@ const LandingScreen = ({ navigation, route }) => {
     preferredMinDuration: '',
     preferredMaxDuration: '',
     avatarEmoji: DEFAULT_AVATAR_EMOJI,
+    familyPreferenceMode: FAMILY_PREFERENCE_MODES.CUSTOM,
+    familyPreferenceFollowUserId: '',
   });
   const [dayTimeSelections, setDayTimeSelections] = useState(
     createInitialDayTimeSelections
   );
+  const [expandedDayKey, setExpandedDayKey] = useState(WEEK_DAYS[0].key);
   const [timePickerState, setTimePickerState] = useState({
     dayKey: null,
+    slotId: null,
     field: null,
     visible: false,
     date: buildTimePickerDate('17:00'),
@@ -419,19 +532,64 @@ const LandingScreen = ({ navigation, route }) => {
   const userEmail = auth.currentUser?.email ?? 'Ukendt bruger';
   const userId = auth.currentUser?.uid ?? null;
   const [copyFeedback, setCopyFeedback] = useState('');
+  const [familyMembers, setFamilyMembers] = useState([]);
   const hasFamily = useMemo(() => Boolean(profile.familyId), [profile.familyId]);
-  const selectedDayKeys = useMemo(() => {
-    if (!Array.isArray(profile.preferredDays)) {
-      return [];
-    }
-    return profile.preferredDays.filter((dayKey) =>
-      WEEK_DAYS.some((day) => day.key === dayKey)
-    );
-  }, [profile.preferredDays]);
-  const selectedDayObjects = useMemo(
-    () => WEEK_DAYS.filter((day) => selectedDayKeys.includes(day.key)),
-    [selectedDayKeys]
+  const normalizedPreferenceMode = useMemo(
+    () => normalizeFamilyPreferenceMode(profile.familyPreferenceMode),
+    [profile.familyPreferenceMode]
   );
+  const isCustomPreferenceMode =
+    normalizedPreferenceMode === FAMILY_PREFERENCE_MODES.CUSTOM;
+  const isFollowPreferenceMode =
+    normalizedPreferenceMode === FAMILY_PREFERENCE_MODES.FOLLOW;
+  const isNoPreferenceMode =
+    normalizedPreferenceMode === FAMILY_PREFERENCE_MODES.NONE;
+  const followableMembers = useMemo(
+    () =>
+      familyMembers.filter(
+        (member) =>
+          typeof member?.userId === 'string' &&
+          member.userId.length > 0 &&
+          member.userId !== userId
+      ),
+    [familyMembers, userId]
+  );
+  const selectedFollowMember = useMemo(
+    () =>
+      followableMembers.find(
+        (member) => member.userId === profile.familyPreferenceFollowUserId
+      ) ?? null,
+    [followableMembers, profile.familyPreferenceFollowUserId]
+  );
+  const canFollowPreference = followableMembers.length > 0;
+
+  useEffect(() => {
+    if (!isFollowPreferenceMode) {
+      return;
+    }
+    const currentFollowId =
+      typeof profile.familyPreferenceFollowUserId === 'string'
+        ? profile.familyPreferenceFollowUserId
+        : '';
+    const hasCurrent = followableMembers.some(
+      (member) => member.userId === currentFollowId
+    );
+    if (hasCurrent) {
+      return;
+    }
+    const fallbackId = followableMembers[0]?.userId ?? '';
+    if (currentFollowId === fallbackId) {
+      return;
+    }
+    setProfile((prev) => ({
+      ...prev,
+      familyPreferenceFollowUserId: fallbackId,
+    }));
+  }, [
+    followableMembers,
+    isFollowPreferenceMode,
+    profile.familyPreferenceFollowUserId,
+  ]);
   const normalizedLocation =
     typeof profile.location === 'string' ? profile.location.trim() : '';
   const hasLegacyLocation =
@@ -454,6 +612,17 @@ const LandingScreen = ({ navigation, route }) => {
     () => splitDurationMinutes(maxDurationMinutes),
     [maxDurationMinutes]
   );
+  const [durationSliderMin, durationSliderMax] = useMemo(() => {
+    const fallbackMin = 60;
+    const fallbackMax = 120;
+    let normalizedMin =
+      minDurationMinutes > 0 ? minDurationMinutes : fallbackMin;
+    let normalizedMax =
+      maxDurationMinutes > 0 ? maxDurationMinutes : fallbackMax;
+    normalizedMin = Math.max(15, Math.min(normalizedMin, CUSTOM_DURATION_MAX - 15));
+    normalizedMax = Math.max(normalizedMin + 15, Math.min(normalizedMax, CUSTOM_DURATION_MAX));
+    return [normalizedMin, normalizedMax];
+  }, [minDurationMinutes, maxDurationMinutes]);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -512,6 +681,13 @@ const LandingScreen = ({ navigation, route }) => {
               typeof data.avatarEmoji === 'string' && data.avatarEmoji.trim().length
                 ? data.avatarEmoji.trim()
                 : DEFAULT_AVATAR_EMOJI,
+            familyPreferenceMode: normalizeFamilyPreferenceMode(
+              data.familyPreferenceMode
+            ),
+            familyPreferenceFollowUserId:
+              typeof data.familyPreferenceFollowUserId === 'string'
+                ? data.familyPreferenceFollowUserId.trim()
+                : '',
           });
           setDayTimeSelections(
             hydrateDayTimeSelections(
@@ -531,50 +707,171 @@ const LandingScreen = ({ navigation, route }) => {
     fetchProfile();
   }, [navigation, userId, isEditMode]);
 
+  useEffect(() => {
+    if (!isCustomPreferenceMode) {
+      return;
+    }
+    const activeKeys = WEEK_DAYS.filter(
+      ({ key }) =>
+        Array.isArray(dayTimeSelections[key]?.slots) &&
+        dayTimeSelections[key].slots.length > 0
+    ).map(({ key }) => key);
+    setProfile((prev) => {
+      const currentDays = Array.isArray(prev.preferredDays)
+        ? prev.preferredDays
+        : [];
+      if (arraysEqual(currentDays, activeKeys)) {
+        return prev;
+      }
+      return {
+        ...prev,
+        preferredDays: activeKeys,
+      };
+    });
+  }, [dayTimeSelections, isCustomPreferenceMode]);
+
+  useEffect(() => {
+    const familyId =
+      typeof profile.familyId === 'string' ? profile.familyId.trim() : '';
+    if (!familyId) {
+      setFamilyMembers([]);
+      return () => {};
+    }
+
+    let isActive = true;
+    const unsubscribe = db
+      .collection('families')
+      .doc(familyId)
+      .onSnapshot(
+        (snapshot) => {
+          if (!snapshot.exists) {
+            if (isActive) {
+              setFamilyMembers([]);
+            }
+            return;
+          }
+          const data = snapshot.data() ?? {};
+          const members = Array.isArray(data.members)
+            ? data.members
+                .map((member) => {
+                  const userIdValue =
+                    typeof member?.userId === 'string' ? member.userId.trim() : '';
+                  if (!userIdValue) {
+                    return null;
+                  }
+                  const displayName =
+                    typeof member?.displayName === 'string' && member.displayName.trim().length
+                      ? member.displayName.trim()
+                      : typeof member?.name === 'string' && member.name.trim().length
+                        ? member.name.trim()
+                        : typeof member?.email === 'string' && member.email.trim().length
+                          ? member.email.trim()
+                          : 'Familiemedlem';
+                  const avatarEmojiValue =
+                    typeof member?.avatarEmoji === 'string' && member.avatarEmoji.trim().length
+                      ? member.avatarEmoji.trim()
+                      : DEFAULT_AVATAR_EMOJI;
+                  return {
+                    userId: userIdValue,
+                    displayName,
+                    avatarEmoji: avatarEmojiValue,
+                  };
+                })
+                .filter(Boolean)
+            : [];
+          if (isActive) {
+            setFamilyMembers(members);
+          }
+        },
+        () => {
+          if (isActive) {
+            setFamilyMembers([]);
+          }
+        }
+      );
+
+    return () => {
+      isActive = false;
+      if (typeof unsubscribe === 'function') {
+        unsubscribe();
+      }
+    };
+  }, [profile.familyId]);
+
   const updateField = (field) => (value) => {
     setProfile((prev) => ({ ...prev, [field]: value }));
   };
 
-  const togglePreferredDay = (dayKey) => {
-    setProfile((prev) => {
-      const current = Array.isArray(prev.preferredDays)
-        ? prev.preferredDays
-        : [];
-      if (current.includes(dayKey)) {
+  const handleAddTimeSlot = useCallback(
+    (dayKey) => {
+      clearTimeWindowError();
+      setDayTimeSelections((prev) => {
+        const current = prev[dayKey] ?? createEmptyDaySelection();
+        if (current.slots.length >= MAX_TIME_SLOTS_PER_DAY) {
+          return prev;
+        }
+        const nextSlot =
+          current.slots.length === 0
+            ? createSlot()
+            : createSlot({
+                start: current.slots[current.slots.length - 1].start,
+                end: current.slots[current.slots.length - 1].end,
+                presetKey: current.slots[current.slots.length - 1].presetKey,
+              });
         return {
           ...prev,
-          preferredDays: current.filter((item) => item !== dayKey),
+          [dayKey]: {
+            slots: [...current.slots, nextSlot],
+          },
         };
-      }
-      return {
-        ...prev,
-        preferredDays: [...current, dayKey],
-      };
-    });
-  };
+      });
+    },
+    [clearTimeWindowError]
+  );
+
+  const handleRemoveTimeSlot = useCallback(
+    (dayKey, slotId) => {
+      clearTimeWindowError();
+      setDayTimeSelections((prev) => {
+        const current = prev[dayKey] ?? createEmptyDaySelection();
+        const nextSlots = current.slots.filter((slot) => slot.id !== slotId);
+        if (nextSlots.length === current.slots.length) {
+          return prev;
+        }
+        if (
+          timePickerState.dayKey === dayKey &&
+          timePickerState.slotId === slotId
+        ) {
+          handleCloseTimePicker();
+        }
+        return {
+          ...prev,
+          [dayKey]: {
+            slots: nextSlots,
+          },
+        };
+      });
+    },
+    [clearTimeWindowError, handleCloseTimePicker, timePickerState.dayKey, timePickerState.slotId]
+  );
 
   const getDaySelectionSummary = useCallback(
     (dayKey) => {
-      const selection = dayTimeSelections[dayKey];
-      if (!selection) {
+      const slots = dayTimeSelections[dayKey]?.slots ?? [];
+      if (!slots.length) {
         return 'Ingen tidsrum';
       }
-      if (
-        selection.presetKey &&
-        selection.presetKey !== CUSTOM_TIME_PRESET &&
-        selection.presetKey !== 'none'
-      ) {
-        const preset = TIME_WINDOW_PRESETS.find(
-          (preset) => preset.key === selection.presetKey
-        );
-        if (preset?.display) {
-          return preset.display;
-        }
+      const validSlots = slots.filter((slot) =>
+        isValidTimeRange(slot.start, slot.end)
+      );
+      if (validSlots.length === 1) {
+        const slot = validSlots[0];
+        return `${slot.start}-${slot.end}`;
       }
-      if (isValidTimeRange(selection.start, selection.end)) {
-        return `${selection.start}-${selection.end}`;
+      if (validSlots.length > 1) {
+        return `${validSlots.length} tidsrum valgt`;
       }
-      return 'Ingen tidsrum';
+      return `${slots.length} tidsrum valgt`;
     },
     [dayTimeSelections]
   );
@@ -602,45 +899,128 @@ const LandingScreen = ({ navigation, route }) => {
   }, []);
 
   const handleDayPresetSelect = useCallback(
-    (dayKey, presetKey) => {
+    (dayKey, slotId, presetKey) => {
       const preset = TIME_WINDOW_PRESETS.find((item) => item.key === presetKey);
-      if (!preset) {
+      if (!preset || !preset.start || !preset.end) {
         return;
       }
       clearTimeWindowError();
-      setDayTimeSelections((prev) => ({
-        ...prev,
-        [dayKey]: {
-          presetKey: preset.key,
-          start: preset.start,
-          end: preset.end,
-        },
-      }));
-      if (timePickerState.dayKey === dayKey && preset.key !== CUSTOM_TIME_PRESET) {
+      setDayTimeSelections((prev) => {
+        const current = prev[dayKey] ?? createEmptyDaySelection();
+        const nextSlots = current.slots.map((slot) => {
+          if (slot.id !== slotId) {
+            return slot;
+          }
+          return {
+            ...slot,
+            presetKey: preset.key,
+            start: preset.start,
+            end: preset.end,
+          };
+        });
+        return {
+          ...prev,
+          [dayKey]: {
+            slots: nextSlots,
+          },
+        };
+      });
+      if (
+        timePickerState.dayKey === dayKey &&
+        timePickerState.slotId === slotId &&
+        preset.key !== CUSTOM_TIME_PRESET
+      ) {
         setTimePickerState((prev) => ({
           ...prev,
           visible: false,
           dayKey: null,
+          slotId: null,
           field: null,
         }));
       }
     },
-    [clearTimeWindowError, timePickerState.dayKey]
+    [clearTimeWindowError, timePickerState.dayKey, timePickerState.slotId]
   );
 
-  const handleCustomTimeMode = useCallback(
-    (dayKey) => {
+  const toggleDayExpansion = useCallback((dayKey) => {
+    setExpandedDayKey((prev) => (prev === dayKey ? null : dayKey));
+  }, []);
+
+  const handleToggleDayActive = useCallback(
+    (dayKey, nextActive) => {
       clearTimeWindowError();
+      if (nextActive) {
+        setExpandedDayKey(dayKey);
+        setDayTimeSelections((prev) => {
+          const current = prev[dayKey] ?? createEmptyDaySelection();
+          if (current.slots.length) {
+            return prev;
+          }
+          return {
+            ...prev,
+            [dayKey]: {
+              slots: [createSlot()],
+            },
+          };
+        });
+        return;
+      }
+      if (timePickerState.dayKey === dayKey) {
+        handleCloseTimePicker();
+      }
       setDayTimeSelections((prev) => {
-        const current = prev[dayKey] ?? { start: '', end: '', presetKey: 'none' };
-        if (current.presetKey === CUSTOM_TIME_PRESET) {
+        const current = prev[dayKey] ?? createEmptyDaySelection();
+        if (!current.slots.length) {
           return prev;
         }
         return {
           ...prev,
-          [dayKey]: {
-            ...current,
+          [dayKey]: createEmptyDaySelection(),
+        };
+      });
+      setExpandedDayKey((prev) => (prev === dayKey ? null : prev));
+    },
+    [clearTimeWindowError, handleCloseTimePicker, timePickerState.dayKey]
+  );
+
+  const handleDayHeaderPress = useCallback(
+    (dayKey, isActive) => {
+      if (!isActive) {
+        handleToggleDayActive(dayKey, true);
+        return;
+      }
+      toggleDayExpansion(dayKey);
+    },
+    [handleToggleDayActive, toggleDayExpansion]
+  );
+
+  const handleCustomTimeMode = useCallback(
+    (dayKey, slotId) => {
+      clearTimeWindowError();
+      setDayTimeSelections((prev) => {
+        const current = prev[dayKey] ?? createEmptyDaySelection();
+        const nextSlots = current.slots.map((slot) => {
+          if (slot.id !== slotId) {
+            return slot;
+          }
+          const hasValidStart = isValidTimeValue(slot.start);
+          const hasValidEnd = isValidTimeValue(slot.end);
+          const nextStart = hasValidStart ? slot.start : DEFAULT_CUSTOM_START;
+          const tentativeEnd = hasValidEnd ? slot.end : DEFAULT_CUSTOM_END;
+          const nextEnd = isValidTimeRange(nextStart, tentativeEnd)
+            ? tentativeEnd
+            : DEFAULT_CUSTOM_END;
+          return {
+            ...slot,
             presetKey: CUSTOM_TIME_PRESET,
+            start: nextStart,
+            end: nextEnd,
+          };
+        });
+        return {
+          ...prev,
+          [dayKey]: {
+            slots: nextSlots,
           },
         };
       });
@@ -649,14 +1029,22 @@ const LandingScreen = ({ navigation, route }) => {
   );
 
   const openDayTimePicker = useCallback(
-    (dayKey, field) => {
-      handleCustomTimeMode(dayKey);
+    (dayKey, slotId, field) => {
+      if (!dayKey || !slotId || !field) {
+        return;
+      }
+      handleCustomTimeMode(dayKey, slotId);
       clearTimeWindowError();
+      const slot =
+        dayTimeSelections[dayKey]?.slots?.find(
+          (item) => item.id === slotId
+        ) ?? null;
       setTimePickerState({
         dayKey,
+        slotId,
         field,
         visible: true,
-        date: buildTimePickerDate(dayTimeSelections[dayKey]?.[field] ?? ''),
+        date: buildTimePickerDate(slot?.[field] ?? ''),
       });
     },
     [clearTimeWindowError, dayTimeSelections, handleCustomTimeMode]
@@ -664,8 +1052,8 @@ const LandingScreen = ({ navigation, route }) => {
 
   const handleTimePickerChange = useCallback(
     (event, selectedDate) => {
-      const { dayKey, field } = timePickerState;
-      if (!dayKey || !field) {
+      const { dayKey, slotId, field } = timePickerState;
+      if (!dayKey || !slotId || !field) {
         return;
       }
 
@@ -675,6 +1063,7 @@ const LandingScreen = ({ navigation, route }) => {
             ...prev,
             visible: false,
             dayKey: null,
+            slotId: null,
             field: null,
           }));
         }
@@ -683,20 +1072,32 @@ const LandingScreen = ({ navigation, route }) => {
 
       clearTimeWindowError();
       const formatted = timeStringFromDate(selectedDate);
-      setDayTimeSelections((prev) => ({
-        ...prev,
-        [dayKey]: {
-          ...(prev[dayKey] ?? { presetKey: CUSTOM_TIME_PRESET, start: '', end: '' }),
-          presetKey: CUSTOM_TIME_PRESET,
-          [field]: formatted,
-        },
-      }));
+      setDayTimeSelections((prev) => {
+        const current = prev[dayKey] ?? createEmptyDaySelection();
+        const nextSlots = current.slots.map((slot) => {
+          if (slot.id !== slotId) {
+            return slot;
+          }
+          return {
+            ...slot,
+            presetKey: CUSTOM_TIME_PRESET,
+            [field]: formatted,
+          };
+        });
+        return {
+          ...prev,
+          [dayKey]: {
+            slots: nextSlots,
+          },
+        };
+      });
 
       if (isIOS) {
         setTimePickerState((prev) => ({ ...prev, date: selectedDate }));
       } else {
         setTimePickerState({
           dayKey: null,
+          slotId: null,
           field: null,
           visible: false,
           date: buildTimePickerDate('17:00'),
@@ -709,25 +1110,12 @@ const LandingScreen = ({ navigation, route }) => {
   const handleCloseTimePicker = useCallback(() => {
     setTimePickerState({
       dayKey: null,
+      slotId: null,
       field: null,
       visible: false,
       date: buildTimePickerDate('17:00'),
     });
   }, []);
-
-  const handleClearDayTime = useCallback(
-    (dayKey) => {
-      clearTimeWindowError();
-      setDayTimeSelections((prev) => ({
-        ...prev,
-        [dayKey]: { presetKey: 'none', start: '', end: '' },
-      }));
-      if (timePickerState.dayKey === dayKey) {
-        handleCloseTimePicker();
-      }
-    },
-    [clearTimeWindowError, handleCloseTimePicker, timePickerState.dayKey]
-  );
 
   const handleSelectDuration = useCallback(
     (field, minutes) => {
@@ -849,6 +1237,91 @@ const LandingScreen = ({ navigation, route }) => {
     }));
   }, []);
 
+  const handleSelectPreferenceMode = useCallback(
+    (mode) => {
+      const normalizedMode = normalizeFamilyPreferenceMode(mode);
+      if (
+        normalizedMode === FAMILY_PREFERENCE_MODES.FOLLOW &&
+        !canFollowPreference
+      ) {
+        return;
+      }
+      setProfile((prev) => {
+        if (prev.familyPreferenceMode === normalizedMode) {
+          return prev;
+        }
+        const next = {
+          ...prev,
+          familyPreferenceMode: normalizedMode,
+        };
+        if (normalizedMode === FAMILY_PREFERENCE_MODES.FOLLOW) {
+          const currentIsValid = followableMembers.some(
+            (member) => member.userId === prev.familyPreferenceFollowUserId
+          );
+          next.familyPreferenceFollowUserId = currentIsValid
+            ? prev.familyPreferenceFollowUserId
+            : followableMembers[0]?.userId ?? '';
+        } else {
+          next.familyPreferenceFollowUserId = '';
+        }
+        return next;
+      });
+      setFieldErrors((prev) => {
+        if (!prev.preferenceMode && normalizedMode === FAMILY_PREFERENCE_MODES.CUSTOM) {
+          return prev;
+        }
+        const next = { ...prev };
+        if (next.preferenceMode) {
+          delete next.preferenceMode;
+        }
+        if (normalizedMode !== FAMILY_PREFERENCE_MODES.CUSTOM) {
+          if (next.timeWindows) {
+            delete next.timeWindows;
+          }
+          if (next.preferredMinDuration) {
+            delete next.preferredMinDuration;
+          }
+          if (next.preferredMaxDuration) {
+            delete next.preferredMaxDuration;
+          }
+        }
+        return next;
+      });
+    },
+    [canFollowPreference, followableMembers]
+  );
+
+  const handleSelectFollowUser = useCallback((memberId) => {
+    if (typeof memberId !== 'string' || !memberId.trim().length) {
+      return;
+    }
+    setProfile((prev) => ({
+      ...prev,
+      familyPreferenceFollowUserId: memberId.trim(),
+    }));
+    setFieldErrors((prev) => {
+      if (!prev.preferenceMode) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next.preferenceMode;
+      return next;
+    });
+  }, []);
+
+  const handleDurationSliderChange = useCallback(
+    (minMinutesValue, maxMinutesValue) => {
+      clearDurationError('preferredMinDuration');
+      clearDurationError('preferredMaxDuration');
+      setProfile((prev) => ({
+        ...prev,
+        preferredMinDuration: String(minMinutesValue),
+        preferredMaxDuration: String(maxMinutesValue),
+      }));
+    },
+    [clearDurationError]
+  );
+
   const validateProfile = () => {
     const nextErrors = {};
     if (!profile.name.trim()) {
@@ -871,47 +1344,77 @@ const LandingScreen = ({ navigation, route }) => {
       nextErrors.gender = 'Køn skal udfyldes.';
     }
 
-    if (!nextErrors.timeWindows) {
-      for (const day of selectedDayObjects) {
-        const selection = dayTimeSelections[day.key];
-        if (!selection) {
-          continue;
-        }
-        const startValue = selection.start?.trim?.() ?? '';
-        const endValue = selection.end?.trim?.() ?? '';
-        if (!startValue && !endValue) {
-          continue;
-        }
-        if (!startValue || !endValue) {
-          nextErrors.timeWindows = `Angiv både start og slut for ${day.label}.`;
-          break;
-        }
-        if (!isValidTimeValue(startValue) || !isValidTimeValue(endValue)) {
-          nextErrors.timeWindows = `Tidsformatet er ugyldigt for ${day.label}.`;
-          break;
-        }
-        if (!isValidTimeRange(startValue, endValue)) {
-          nextErrors.timeWindows = `Sluttid skal være efter starttid for ${day.label}.`;
-          break;
+    if (isFollowPreferenceMode) {
+      const followUserId =
+        typeof profile.familyPreferenceFollowUserId === 'string'
+          ? profile.familyPreferenceFollowUserId.trim()
+          : '';
+      if (!followUserId) {
+        nextErrors.preferenceMode = 'Vælg hvem du vil følge.';
+      }
+    }
+
+    if (isCustomPreferenceMode && !nextErrors.timeWindows) {
+      outer: for (const day of WEEK_DAYS) {
+        const slots = dayTimeSelections[day.key]?.slots ?? [];
+        for (let index = 0; index < slots.length; index += 1) {
+          const slot = slots[index];
+          const startValue =
+            typeof slot.start === 'string' ? slot.start.trim() : '';
+          const endValue =
+            typeof slot.end === 'string' ? slot.end.trim() : '';
+          if (!startValue || !endValue) {
+            nextErrors.timeWindows = `Angiv både start og slut for ${day.label}${
+              slots.length > 1 ? ` (tidsrum ${index + 1})` : ''
+            }.`;
+            break outer;
+          }
+          if (!isValidTimeValue(startValue) || !isValidTimeValue(endValue)) {
+            nextErrors.timeWindows = `Tidsformatet er ugyldigt for ${day.label}${
+              slots.length > 1 ? ` (tidsrum ${index + 1})` : ''
+            }.`;
+            break outer;
+          }
+          if (!isValidTimeRange(startValue, endValue)) {
+            nextErrors.timeWindows = `Sluttid skal være efter starttid for ${day.label}${
+              slots.length > 1 ? ` (tidsrum ${index + 1})` : ''
+            }.`;
+            break outer;
+          }
         }
       }
     }
 
-    const minDurationRaw = typeof profile.preferredMinDuration === 'string' ? profile.preferredMinDuration.trim() : '';
-    const maxDurationRaw = typeof profile.preferredMaxDuration === 'string' ? profile.preferredMaxDuration.trim() : '';
-    const minDurationValue = minDurationRaw ? Number(minDurationRaw) : null;
-    const maxDurationValue = maxDurationRaw ? Number(maxDurationRaw) : null;
+    if (isCustomPreferenceMode) {
+      const minDurationRaw =
+        typeof profile.preferredMinDuration === 'string'
+          ? profile.preferredMinDuration.trim()
+          : '';
+      const maxDurationRaw =
+        typeof profile.preferredMaxDuration === 'string'
+          ? profile.preferredMaxDuration.trim()
+          : '';
+      const minDurationValue = minDurationRaw ? Number(minDurationRaw) : null;
+      const maxDurationValue = maxDurationRaw ? Number(maxDurationRaw) : null;
 
-    if (minDurationRaw && (!Number.isFinite(minDurationValue) || minDurationValue <= 0)) {
-      nextErrors.preferredMinDuration = 'Kortest familietid skal være et positivt tal (minutter).';
-    }
+      if (minDurationRaw && (!Number.isFinite(minDurationValue) || minDurationValue <= 0)) {
+        nextErrors.preferredMinDuration =
+          'Kortest familietid skal være et positivt tal (minutter).';
+      }
 
-    if (maxDurationRaw && (!Number.isFinite(maxDurationValue) || maxDurationValue <= 0)) {
-      nextErrors.preferredMaxDuration = 'Længst familietid skal være et positivt tal (minutter).';
-    }
+      if (maxDurationRaw && (!Number.isFinite(maxDurationValue) || maxDurationValue <= 0)) {
+        nextErrors.preferredMaxDuration =
+          'Længst familietid skal være et positivt tal (minutter).';
+      }
 
-    if (Number.isFinite(minDurationValue) && Number.isFinite(maxDurationValue) && maxDurationValue < minDurationValue) {
-      nextErrors.preferredMaxDuration = 'Længst familietid skal være større end kortest familietid.';
+      if (
+        Number.isFinite(minDurationValue) &&
+        Number.isFinite(maxDurationValue) &&
+        maxDurationValue < minDurationValue
+      ) {
+        nextErrors.preferredMaxDuration =
+          'Længst familietid skal være større end kortest familietid.';
+      }
     }
 
     setFieldErrors(nextErrors);
@@ -980,6 +1483,31 @@ const LandingScreen = ({ navigation, route }) => {
           payload.preferredFamilyMaxDurationMinutes = maxDurationValue;
         } else {
           payload.preferredFamilyMaxDurationMinutes = firebase.firestore.FieldValue.delete();
+        }
+
+        const timeWindowPayload = buildTimeWindowPayload(dayTimeSelections);
+        if (timeWindowPayload) {
+          payload.preferredFamilyTimeWindows = timeWindowPayload;
+        } else {
+          payload.preferredFamilyTimeWindows = firebase.firestore.FieldValue.delete();
+        }
+
+        const preferenceMode = normalizeFamilyPreferenceMode(
+          profile.familyPreferenceMode
+        );
+        const followUserIdRaw =
+          typeof profile.familyPreferenceFollowUserId === 'string'
+            ? profile.familyPreferenceFollowUserId.trim()
+            : '';
+        payload.familyPreferenceMode = preferenceMode;
+        if (
+          preferenceMode === FAMILY_PREFERENCE_MODES.FOLLOW &&
+          followUserIdRaw.length
+        ) {
+          payload.familyPreferenceFollowUserId = followUserIdRaw;
+        } else {
+          payload.familyPreferenceFollowUserId =
+            firebase.firestore.FieldValue.delete();
         }
 
         await db.collection('users').doc(userId).set(payload, { merge: true });
@@ -1153,7 +1681,7 @@ const LandingScreen = ({ navigation, route }) => {
                     label="Navn"
                     value={profile.name}
                     onChangeText={updateField('name')}
-                    placeholder="Dit fulde navn"
+                    placeholder="Dit navn"
                     error={fieldErrors.name}
                     style={styles.field}
                   />
@@ -1242,518 +1770,594 @@ const LandingScreen = ({ navigation, route }) => {
 
                 <View style={styles.sectionDivider} />
 
-                <Text style={styles.preferenceTitle}>Familietidspræferencer</Text>
+                <Text style={styles.preferenceTitle}>Dine præferencer</Text>
                 <Text style={styles.preferenceHint}>
-                  Hjælp FamTime med at foreslå tidspunkter, der passer hele familien.
+                  Vælg om du følger familien eller tilpasser selv – og brug hurtigvalgene til hurtigt at sætte jeres favorit-tidsrum.
                 </Text>
-                <Text style={styles.preferenceSubtitle}>Foretrukne dage</Text>
-                <View style={styles.dayChipsWrap}>
-                  {WEEK_DAYS.map((day) => {
-                    const selected = profile.preferredDays.includes(day.key);
+                <Text style={styles.preferenceSubtitle}>Hvordan skal de bruges?</Text>
+                <View style={styles.preferenceModeWrap}>
+                  {FAMILY_PREFERENCE_MODE_OPTIONS.map((option) => {
+                    const selected = normalizedPreferenceMode === option.key;
+                    const disabled =
+                      option.key === FAMILY_PREFERENCE_MODES.FOLLOW &&
+                      !canFollowPreference;
                     return (
                       <Pressable
-                        key={day.key}
-                        onPress={() => togglePreferredDay(day.key)}
+                        key={option.key}
+                        onPress={() => handleSelectPreferenceMode(option.key)}
+                        disabled={disabled}
                         style={[
-                          styles.dayChip,
-                          selected ? styles.dayChipSelected : null,
+                          styles.preferenceModeChip,
+                          selected ? styles.preferenceModeChipSelected : null,
+                          disabled ? styles.preferenceModeChipDisabled : null,
                         ]}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected, disabled }}
                       >
                         <Text
                           style={[
-                            styles.dayChipText,
-                            selected ? styles.dayChipTextSelected : null,
+                            styles.preferenceModeChipText,
+                            selected ? styles.preferenceModeChipTextSelected : null,
+                            disabled ? styles.preferenceModeChipTextDisabled : null,
                           ]}
                         >
-                          {day.label}
+                          {option.label}
                         </Text>
                       </Pressable>
                     );
                   })}
                 </View>
-                <Text style={styles.preferenceFootnote}>
-                  Valgte dage bruges til forslag i &quot;Familiebegivenheder&quot;.
-                </Text>
-
-                <Text style={styles.preferenceSubtitle}>Foretrukket tidsrum</Text>
-                <Text style={styles.preferenceFootnote}>
-                  Vælg tidsrum pr. dag, så FamTime ved hvornår familien typisk kan mødes.
-                </Text>
-                <View style={styles.dayTimeList}>
-                  {selectedDayObjects.length === 0 ? (
-                    <Text style={styles.preferenceFootnote}>
-                      Vælg mindst én foretrukken dag for at indstille tidsrum.
+                {!canFollowPreference ? (
+                  <Text style={styles.preferenceFootnote}>
+                    Inviter mindst ét familiemedlem for at kunne følge deres præferencer.
+                  </Text>
+                ) : null}
+                {fieldErrors.preferenceMode ? (
+                  <Text style={styles.validationMessage}>
+                    {fieldErrors.preferenceMode}
+                  </Text>
+                ) : null}
+                {isFollowPreferenceMode ? (
+                  <View style={styles.preferenceInfoCard}>
+                    <Text style={styles.preferenceInfoTitle}>
+                      Følg et familiemedlem
                     </Text>
-                  ) : (
-                    selectedDayObjects.map((day) => {
-                      const selection = dayTimeSelections[day.key] ?? {
-                        presetKey: 'none',
-                        start: '',
-                        end: '',
-                      };
-                      const activePresetKey = selection.presetKey ?? 'none';
-                      const summary = getDaySelectionSummary(day.key);
-                      const showCustom =
-                        activePresetKey === CUSTOM_TIME_PRESET;
-
-                      return (
-                        <View key={day.key} style={styles.dayTimeCard}>
-                          <View style={styles.dayTimeHeader}>
-                            <Text style={styles.dayTimeLabel}>
-                              {day.label}
-                            </Text>
-                            <Text style={styles.dayTimeSummary}>{summary}</Text>
-                          </View>
-                          <View style={styles.dayTimeActions}>
+                    <Text style={styles.preferenceInfoText}>
+                      {selectedFollowMember
+                        ? `Dine forslag matcher ${selectedFollowMember.displayName}.`
+                        : 'Vælg hvem du vil følge herunder.'}
+                    </Text>
+                    {followableMembers.length ? (
+                      <View style={styles.followList}>
+                        {followableMembers.map((member) => {
+                          const selected =
+                            profile.familyPreferenceFollowUserId === member.userId;
+                          return (
                             <Pressable
-                              onPress={() => handleClearDayTime(day.key)}
-                              disabled={!selection.start && !selection.end}
-                            >
-                              <Text
-                                style={[
-                                  styles.timeSelectionClear,
-                                  selection.start || selection.end
-                                    ? null
-                                    : styles.timeSelectionClearDisabled,
-                                ]}
-                              >
-                                Nulstil
-                              </Text>
-                            </Pressable>
-                          </View>
-                          <View style={styles.timePresetWrap}>
-                            {TIME_WINDOW_PRESETS.map((preset) => {
-                              const selected = activePresetKey === preset.key;
-                              return (
-                                <Pressable
-                                  key={`${day.key}-${preset.key}`}
-                                  onPress={() =>
-                                    handleDayPresetSelect(day.key, preset.key)
-                                  }
-                                  style={[
-                                    styles.timePresetChip,
-                                    selected
-                                      ? styles.timePresetChipSelected
-                                      : null,
-                                  ]}
-                                  accessibilityRole="button"
-                                  accessibilityLabel={`Vælg ${preset.label} for ${day.label}`}
-                                >
-                                  <Text
-                                    style={[
-                                      styles.timePresetLabel,
-                                      selected
-                                        ? styles.timePresetLabelSelected
-                                        : null,
-                                    ]}
-                                  >
-                                    {preset.label}
-                                  </Text>
-                                  {preset.display ? (
-                                    <Text
-                                      style={[
-                                        styles.timePresetRange,
-                                        selected
-                                          ? styles.timePresetRangeSelected
-                                          : null,
-                                      ]}
-                                    >
-                                      {preset.display}
-                                    </Text>
-                                  ) : null}
-                                </Pressable>
-                              );
-                            })}
-                            <Pressable
-                              key={`${day.key}-custom`}
-                              onPress={() => handleCustomTimeMode(day.key)}
+                              key={member.userId}
+                              onPress={() => handleSelectFollowUser(member.userId)}
                               style={[
-                                styles.timePresetChip,
-                                activePresetKey === CUSTOM_TIME_PRESET
-                                  ? styles.timePresetChipSelected
-                                  : null,
+                                styles.followOption,
+                                selected ? styles.followOptionSelected : null,
                               ]}
                               accessibilityRole="button"
-                              accessibilityLabel={`Tilpas tidsrum for ${day.label}`}
+                              accessibilityState={{ selected }}
+                            >
+                              <Text style={styles.followOptionEmoji}>
+                                {member.avatarEmoji}
+                              </Text>
+                              <View style={styles.followOptionBody}>
+                                <Text style={styles.followOptionName}>
+                                  {member.displayName}
+                                </Text>
+                                <Text style={styles.followOptionHint}>
+                                  Brug deres dage og tidsrum
+                                </Text>
+                              </View>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    ) : (
+                      <Text style={styles.preferenceFootnote}>
+                        Tilføj familiemedlemmer under Konto ▸ Din familie for at kunne følge dem.
+                      </Text>
+                    )}
+                  </View>
+                ) : null}
+                {isNoPreferenceMode ? (
+                  <View style={styles.preferenceInfoCard}>
+                    <Text style={styles.preferenceInfoTitle}>Ingen præferencer</Text>
+                    <Text style={styles.preferenceInfoText}>
+                      FamTime foreslår tidspunkter på baggrund af resten af familien, mens dine egne felter kan stå tomme.
+                    </Text>
+                  </View>
+                ) : null}
+                {isCustomPreferenceMode && (
+                  <View style={styles.customPreferenceSection}>
+                    <Text style={styles.preferenceSubtitle}>Foretrukne tidspunkter</Text>
+                    <Text style={styles.preferenceFootnote}>
+                      Tryk på en dag for at åbne den og vælg de tidsrum der passer jer – du kan tilføje flere tidsrum per dag.
+                    </Text>
+                    <View style={styles.dayTimeList}>
+                      {WEEK_DAYS.map((day) => {
+                        const daySelection = dayTimeSelections[day.key] ?? createEmptyDaySelection();
+                        const slots = daySelection.slots ?? [];
+                        const hasSlots = slots.length > 0;
+                        const summary = getDaySelectionSummary(day.key);
+                        const addDisabled = slots.length >= MAX_TIME_SLOTS_PER_DAY;
+                        const isExpanded = expandedDayKey === day.key;
+
+                        return (
+                          <View key={day.key} style={styles.dayAccordion}>
+                            <View
+                              style={[
+                                styles.dayAccordionHeader,
+                                isExpanded ? styles.dayAccordionHeaderExpanded : null,
+                              ]}
+                            >
+                              <Pressable
+                                onPress={() => handleDayHeaderPress(day.key, hasSlots)}
+                                accessibilityRole="button"
+                                accessibilityState={{ expanded: isExpanded }}
+                                style={styles.dayAccordionHeaderMain}
+                              >
+                                <View style={styles.dayTimeHeaderTextWrap}>
+                                  <Text style={styles.dayTimeLabel}>{day.label}</Text>
+                                  <Text style={styles.dayTimeSummary}>{summary}</Text>
+                                </View>
+                              </Pressable>
+                              <Switch
+                                value={hasSlots}
+                                onValueChange={(value) =>
+                                  handleToggleDayActive(day.key, value)
+                                }
+                                style={styles.dayAccordionSwitch}
+                                trackColor={{
+                                  false: colors.border,
+                                  true: 'rgba(230, 138, 46, 0.45)',
+                                }}
+                                thumbColor={
+                                  hasSlots ? colors.primaryDark : colors.surface
+                                }
+                                ios_backgroundColor={colors.border}
+                              />
+                            </View>
+                            {isExpanded ? (
+                              <View style={styles.dayAccordionBody}>
+                                <View style={styles.dayAccordionBodyHeader}>
+                                  <Text style={styles.dayToggleHint}>
+                                    Vælg et hurtigvalg eller justér tiden via start/slut.
+                                  </Text>
+                                  <Pressable
+                                    onPress={() => handleAddTimeSlot(day.key)}
+                                    disabled={addDisabled}
+                                    style={[
+                                      styles.addSlotButton,
+                                      addDisabled ? styles.addSlotButtonDisabled : null,
+                                    ]}
+                                  >
+                                    <Text
+                                      style={[
+                                        styles.addSlotButtonText,
+                                        addDisabled ? styles.addSlotButtonTextDisabled : null,
+                                      ]}
+                                    >
+                                      Tilføj tidsrum
+                                    </Text>
+                                  </Pressable>
+                                </View>
+                                {hasSlots ? (
+                                  slots.map((slot, index) => (
+                                    <View key={slot.id} style={styles.timeSlotCard}>
+                                      <View style={styles.timeSlotHeader}>
+                                        <Text style={styles.timeSlotLabel}>{`Tidsrum ${index + 1}`}</Text>
+                                        <Pressable
+                                          onPress={() => handleRemoveTimeSlot(day.key, slot.id)}
+                                        >
+                                          <Text style={styles.timeSlotRemove}>Fjern</Text>
+                                        </Pressable>
+                                      </View>
+                                      <View style={styles.timePresetWrap}>
+                                        {QUICK_TIME_PRESETS.map((preset) => {
+                                          const selected = slot.presetKey === preset.key;
+                                          return (
+                                            <Pressable
+                                              key={`${slot.id}-${preset.key}`}
+                                              onPress={() =>
+                                                handleDayPresetSelect(day.key, slot.id, preset.key)
+                                              }
+                                              style={[
+                                                styles.timePresetChip,
+                                                selected ? styles.timePresetChipSelected : null,
+                                              ]}
+                                              accessibilityRole="button"
+                                              accessibilityLabel={`Vælg ${preset.label} for ${day.label}`}
+                                            >
+                                              <Text
+                                                style={[
+                                                  styles.timePresetLabel,
+                                                  selected
+                                                    ? styles.timePresetLabelSelected
+                                                    : null,
+                                                ]}
+                                              >
+                                                {preset.label}
+                                              </Text>
+                                              <Text
+                                                style={[
+                                                  styles.timePresetRange,
+                                                  selected
+                                                    ? styles.timePresetRangeSelected
+                                                    : null,
+                                                ]}
+                                              >
+                                                {preset.display}
+                                              </Text>
+                                            </Pressable>
+                                          );
+                                        })}
+                                      </View>
+                                      <View style={styles.timeSelectionRow}>
+                                        <Pressable
+                                          style={styles.timeSelectionButton}
+                                          onPress={() =>
+                                            openDayTimePicker(day.key, slot.id, 'start')
+                                          }
+                                        >
+                                          <Text style={styles.timeSelectionLabel}>Start</Text>
+                                          <Text style={styles.timeSelectionValue}>
+                                            {formatTimeSelectionDisplay(slot.start)}
+                                          </Text>
+                                        </Pressable>
+                                        <Pressable
+                                          style={[
+                                            styles.timeSelectionButton,
+                                            styles.timeSelectionButtonRight,
+                                          ]}
+                                          onPress={() =>
+                                            openDayTimePicker(day.key, slot.id, 'end')
+                                          }
+                                        >
+                                          <Text style={styles.timeSelectionLabel}>Slut</Text>
+                                          <Text style={styles.timeSelectionValue}>
+                                            {formatTimeSelectionDisplay(slot.end)}
+                                          </Text>
+                                        </Pressable>
+                                      </View>
+                                      {timePickerState.visible &&
+                                      timePickerState.dayKey === day.key &&
+                                      timePickerState.slotId === slot.id ? (
+                                        <View style={styles.inlineTimePicker}>
+                                          <DateTimePicker
+                                            value={timePickerState.date}
+                                            mode="time"
+                                            display={isIOS ? 'spinner' : 'default'}
+                                            onChange={handleTimePickerChange}
+                                          />
+                                          {isIOS ? (
+                                            <Pressable
+                                              onPress={handleCloseTimePicker}
+                                              style={styles.timePickerCloseButton}
+                                            >
+                                              <Text style={styles.timePickerCloseText}>
+                                                Færdig
+                                              </Text>
+                                            </Pressable>
+                                          ) : null}
+                                        </View>
+                                      ) : null}
+                                    </View>
+                                  ))
+                                ) : (
+                                  <Text style={styles.dayEmptyHint}>
+                                    Ingen tidsrum for {day.label.toLowerCase()} endnu. Tryk &quot;Tilføj tidsrum&quot; for at vælge et tidspunkt.
+                                  </Text>
+                                )}
+                              </View>
+                            ) : null}
+                          </View>
+                        );
+                      })}
+                    </View>
+                    {fieldErrors.timeWindows ? (
+                      <Text style={styles.validationMessage}>
+                        {fieldErrors.timeWindows}
+                      </Text>
+                    ) : null}
+                    <View style={styles.durationSliderBlock}>
+                      <DurationRangeSlider
+                        minValue={durationSliderMin}
+                        maxValue={durationSliderMax}
+                        onChange={handleDurationSliderChange}
+                      />
+                      <Text style={styles.durationSliderHint}>
+                        Træk for at sætte intervallet for hvor kort og hvor langt familietid må være.
+                      </Text>
+                    </View>
+
+                    <View style={styles.durationGroup}>
+                      <View style={styles.durationHeader}>
+                        <Text style={styles.durationTitle}>Kortest familietid</Text>
+                        <Pressable
+                          onPress={() => handleClearDuration('preferredMinDuration')}
+                        >
+                          <Text
+                            style={[
+                              styles.timeSelectionClear,
+                              profile.preferredMinDuration
+                                ? null
+                                : styles.timeSelectionClearDisabled,
+                            ]}
+                          >
+                            Ryd
+                          </Text>
+                        </Pressable>
+                      </View>
+                      <View style={styles.durationChipWrap}>
+                        {MIN_DURATION_PRESETS.map(({ label, minutes }) => {
+                          const isSelected =
+                            Number(profile.preferredMinDuration) === minutes;
+                          return (
+                            <Pressable
+                              key={`min-${minutes}`}
+                              onPress={() =>
+                                handleSelectDuration('preferredMinDuration', minutes)
+                              }
+                              style={[
+                                styles.durationChip,
+                                isSelected ? styles.durationChipSelected : null,
+                              ]}
                             >
                               <Text
                                 style={[
-                                  styles.timePresetLabel,
-                                  activePresetKey === CUSTOM_TIME_PRESET
-                                    ? styles.timePresetLabelSelected
-                                    : null,
+                                  styles.durationChipText,
+                                  isSelected ? styles.durationChipTextSelected : null,
                                 ]}
                               >
-                                Tilpas
-                              </Text>
-                              <Text
-                                style={[
-                                  styles.timePresetRange,
-                                  activePresetKey === CUSTOM_TIME_PRESET
-                                    ? styles.timePresetRangeSelected
-                                    : null,
-                                ]}
-                              >
-                                {isValidTimeRange(selection.start, selection.end)
-                                  ? `${selection.start}-${selection.end}`
-                                  : 'Vælg tider'}
+                                {label}
                               </Text>
                             </Pressable>
+                          );
+                        })}
+                      </View>
+                      <View style={styles.durationCustomCard}>
+                        <View style={styles.durationCustomHeader}>
+                          <Text style={styles.durationCustomLabel}>Tilpas selv</Text>
+                          <Text style={styles.durationCustomValue}>
+                            {formatDurationMinutesLabel(minDurationMinutes)}
+                          </Text>
+                        </View>
+                        <View style={styles.durationStepperRow}>
+                          <View
+                            style={[
+                              styles.durationStepperColumn,
+                              styles.durationStepperColumnLast,
+                            ]}
+                          >
+                            <Text style={styles.durationStepperLabel}>Timer</Text>
+                            <View style={styles.durationStepper}>
+                              <Pressable
+                                style={styles.durationStepperButton}
+                                onPress={() =>
+                                  handleDurationStepperChange(
+                                    'preferredMinDuration',
+                                    'hour',
+                                    -1
+                                  )
+                                }
+                                accessibilityRole="button"
+                                accessibilityLabel="Mindsk timer for kortest familietid"
+                              >
+                                <Text style={styles.durationStepperButtonText}>-</Text>
+                              </Pressable>
+                              <Text style={styles.durationStepperValue}>
+                                {minDurationParts.hours}
+                              </Text>
+                              <Pressable
+                                style={styles.durationStepperButton}
+                                onPress={() =>
+                                  handleDurationStepperChange(
+                                    'preferredMinDuration',
+                                    'hour',
+                                    1
+                                  )
+                                }
+                                accessibilityRole="button"
+                                accessibilityLabel="Øg timer for kortest familietid"
+                              >
+                                <Text style={styles.durationStepperButtonText}>+</Text>
+                              </Pressable>
+                            </View>
                           </View>
-                          {showCustom ? (
-                            <>
-                              <View style={styles.timeSelectionRow}>
-                                <Pressable
-                                  style={styles.timeSelectionButton}
-                                  onPress={() =>
-                                    openDayTimePicker(day.key, 'start')
-                                  }
-                                >
-                                  <Text style={styles.timeSelectionLabel}>
-                                    Start
-                                  </Text>
-                                  <Text style={styles.timeSelectionValue}>
-                                    {formatTimeSelectionDisplay(
-                                      selection.start
-                                    )}
-                                  </Text>
-                                </Pressable>
-                                <Pressable
-                                  style={[
-                                    styles.timeSelectionButton,
-                                    styles.timeSelectionButtonRight,
-                                  ]}
-                                  onPress={() =>
-                                    openDayTimePicker(day.key, 'end')
-                                  }
-                                >
-                                  <Text style={styles.timeSelectionLabel}>
-                                    Slut
-                                  </Text>
-                                  <Text style={styles.timeSelectionValue}>
-                                    {formatTimeSelectionDisplay(
-                                      selection.end
-                                    )}
-                                  </Text>
-                                </Pressable>
-                              </View>
-                              {timePickerState.visible &&
-                              timePickerState.dayKey === day.key ? (
-                                <View style={styles.inlineTimePicker}>
-                                  <DateTimePicker
-                                    value={timePickerState.date}
-                                    mode="time"
-                                    display={
-                                      isIOS ? 'spinner' : 'default'
-                                    }
-                                    onChange={handleTimePickerChange}
-                                  />
-                                  {isIOS ? (
-                                    <Pressable
-                                      onPress={handleCloseTimePicker}
-                                      style={styles.timePickerCloseButton}
-                                    >
-                                      <Text
-                                        style={styles.timePickerCloseText}
-                                      >
-                                        Færdig
-                                      </Text>
-                                    </Pressable>
-                                  ) : null}
-                                </View>
-                              ) : null}
-                            </>
-                          ) : null}
-                        </View>
-                      );
-                    })
-                  )}
-                  {fieldErrors.timeWindows ? (
-                    <Text style={styles.validationMessage}>
-                      {fieldErrors.timeWindows}
-                    </Text>
-                  ) : null}
-                </View>
-                <View style={styles.durationGroup}>
-                  <View style={styles.durationHeader}>
-                    <Text style={styles.durationTitle}>Kortest familietid</Text>
-                    <Pressable
-                      onPress={() => handleClearDuration('preferredMinDuration')}
-                    >
-                      <Text
-                        style={[
-                          styles.timeSelectionClear,
-                          profile.preferredMinDuration
-                            ? null
-                            : styles.timeSelectionClearDisabled,
-                        ]}
-                      >
-                        Ryd
-                      </Text>
-                    </Pressable>
-                  </View>
-                  <View style={styles.durationChipWrap}>
-                    {MIN_DURATION_PRESETS.map(({ label, minutes }) => {
-                      const isSelected =
-                        Number(profile.preferredMinDuration) === minutes;
-                      return (
-                        <Pressable
-                          key={`min-${minutes}`}
-                          onPress={() =>
-                            handleSelectDuration('preferredMinDuration', minutes)
-                          }
-                          style={[
-                            styles.durationChip,
-                            isSelected ? styles.durationChipSelected : null,
-                          ]}
-                        >
-                          <Text
+                          <View
                             style={[
-                              styles.durationChipText,
-                              isSelected ? styles.durationChipTextSelected : null,
+                              styles.durationStepperColumn,
+                              styles.durationStepperColumnLast,
                             ]}
                           >
-                            {label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                  <View style={styles.durationCustomCard}>
-                    <View style={styles.durationCustomHeader}>
-                      <Text style={styles.durationCustomLabel}>Tilpas selv</Text>
-                      <Text style={styles.durationCustomValue}>
-                        {formatDurationMinutesLabel(minDurationMinutes)}
-                      </Text>
-                    </View>
-                    <View style={styles.durationStepperRow}>
-                      <View
-                        style={[
-                          styles.durationStepperColumn,
-                          styles.durationStepperColumnLast,
-                        ]}
-                      >
-                        <Text style={styles.durationStepperLabel}>Timer</Text>
-                        <View style={styles.durationStepper}>
-                          <Pressable
-                            style={styles.durationStepperButton}
-                            onPress={() =>
-                              handleDurationStepperChange(
-                                'preferredMinDuration',
-                                'hour',
-                                -1
-                              )
-                            }
-                            accessibilityRole="button"
-                            accessibilityLabel="Mindsk timer for kortest familietid"
-                          >
-                            <Text style={styles.durationStepperButtonText}>-</Text>
-                          </Pressable>
-                          <Text style={styles.durationStepperValue}>
-                            {minDurationParts.hours}
-                          </Text>
-                          <Pressable
-                            style={styles.durationStepperButton}
-                            onPress={() =>
-                              handleDurationStepperChange(
-                                'preferredMinDuration',
-                                'hour',
-                                1
-                              )
-                            }
-                            accessibilityRole="button"
-                            accessibilityLabel="Øg timer for kortest familietid"
-                          >
-                            <Text style={styles.durationStepperButtonText}>+</Text>
-                          </Pressable>
+                            <Text style={styles.durationStepperLabel}>Minutter</Text>
+                            <View style={styles.durationStepper}>
+                              <Pressable
+                                style={styles.durationStepperButton}
+                                onPress={() =>
+                                  handleDurationStepperChange(
+                                    'preferredMinDuration',
+                                    'minute',
+                                    -1
+                                  )
+                                }
+                                accessibilityRole="button"
+                                accessibilityLabel="Mindsk minutter for kortest familietid"
+                              >
+                                <Text style={styles.durationStepperButtonText}>-</Text>
+                              </Pressable>
+                              <Text style={styles.durationStepperValue}>
+                                {minDurationParts.minutes}
+                              </Text>
+                              <Pressable
+                                style={styles.durationStepperButton}
+                                onPress={() =>
+                                  handleDurationStepperChange(
+                                    'preferredMinDuration',
+                                    'minute',
+                                    1
+                                  )
+                                }
+                                accessibilityRole="button"
+                                accessibilityLabel="Øg minutter for kortest familietid"
+                              >
+                                <Text style={styles.durationStepperButtonText}>+</Text>
+                              </Pressable>
+                            </View>
+                          </View>
                         </View>
                       </View>
-                      <View
-                        style={[
-                          styles.durationStepperColumn,
-                          styles.durationStepperColumnLast,
-                        ]}
-                      >
-                        <Text style={styles.durationStepperLabel}>Minutter</Text>
-                        <View style={styles.durationStepper}>
-                          <Pressable
-                            style={styles.durationStepperButton}
-                            onPress={() =>
-                              handleDurationStepperChange(
-                                'preferredMinDuration',
-                                'minute',
-                                -1
-                              )
-                            }
-                            accessibilityRole="button"
-                            accessibilityLabel="Mindsk minutter for kortest familietid"
-                          >
-                            <Text style={styles.durationStepperButtonText}>-</Text>
-                          </Pressable>
-                          <Text style={styles.durationStepperValue}>
-                            {minDurationParts.minutes}
-                          </Text>
-                          <Pressable
-                            style={styles.durationStepperButton}
-                            onPress={() =>
-                              handleDurationStepperChange(
-                                'preferredMinDuration',
-                                'minute',
-                                1
-                              )
-                            }
-                            accessibilityRole="button"
-                            accessibilityLabel="Øg minutter for kortest familietid"
-                          >
-                            <Text style={styles.durationStepperButtonText}>+</Text>
-                          </Pressable>
-                        </View>
-                      </View>
+                      {fieldErrors.preferredMinDuration ? (
+                        <Text style={styles.validationMessage}>
+                          {fieldErrors.preferredMinDuration}
+                        </Text>
+                      ) : null}
                     </View>
-                  </View>
-                  {fieldErrors.preferredMinDuration ? (
-                    <Text style={styles.validationMessage}>
-                      {fieldErrors.preferredMinDuration}
-                    </Text>
-                  ) : null}
-                </View>
-                <View style={styles.durationGroup}>
-                  <View style={styles.durationHeader}>
-                    <Text style={styles.durationTitle}>Længst familietid</Text>
-                    <Pressable
-                      onPress={() => handleClearDuration('preferredMaxDuration')}
-                    >
-                      <Text
-                        style={[
-                          styles.timeSelectionClear,
-                          profile.preferredMaxDuration
-                            ? null
-                            : styles.timeSelectionClearDisabled,
-                        ]}
-                      >
-                        Ryd
-                      </Text>
-                    </Pressable>
-                  </View>
-                  <View style={styles.durationChipWrap}>
-                    {MAX_DURATION_PRESETS.map(({ label, minutes }) => {
-                      const isSelected =
-                        Number(profile.preferredMaxDuration) === minutes;
-                      return (
-                        <Pressable
-                          key={`max-${minutes}`}
-                          onPress={() =>
-                            handleSelectDuration('preferredMaxDuration', minutes)
-                          }
-                          style={[
-                            styles.durationChip,
-                            isSelected ? styles.durationChipSelected : null,
-                          ]}
-                        >
-                          <Text
-                            style={[
-                              styles.durationChipText,
-                              isSelected ? styles.durationChipTextSelected : null,
-                            ]}
-                          >
-                            {label}
-                          </Text>
-                        </Pressable>
-                      );
-                    })}
-                  </View>
-                  <View style={styles.durationCustomCard}>
-                    <View style={styles.durationCustomHeader}>
-                      <Text style={styles.durationCustomLabel}>Tilpas selv</Text>
-                      <Text style={styles.durationCustomValue}>
-                        {formatDurationMinutesLabel(maxDurationMinutes)}
-                      </Text>
-                    </View>
-                    <View style={styles.durationStepperRow}>
-                      <View style={styles.durationStepperColumn}>
-                        <Text style={styles.durationStepperLabel}>Timer</Text>
-                        <View style={styles.durationStepper}>
-                          <Pressable
-                            style={styles.durationStepperButton}
-                            onPress={() =>
-                              handleDurationStepperChange(
-                                'preferredMaxDuration',
-                                'hour',
-                                -1
-                              )
-                            }
-                            accessibilityRole="button"
-                            accessibilityLabel="Mindsk timer for længst familietid"
-                          >
-                            <Text style={styles.durationStepperButtonText}>-</Text>
-                          </Pressable>
-                          <Text style={styles.durationStepperValue}>
-                            {maxDurationParts.hours}
-                          </Text>
-                          <Pressable
-                            style={styles.durationStepperButton}
-                            onPress={() =>
-                              handleDurationStepperChange(
-                                'preferredMaxDuration',
-                                'hour',
-                                1
-                              )
-                            }
-                            accessibilityRole="button"
-                            accessibilityLabel="Øg timer for længst familietid"
-                          >
-                            <Text style={styles.durationStepperButtonText}>+</Text>
-                          </Pressable>
-                        </View>
-                      </View>
-                      <View style={styles.durationStepperColumn}>
-                        <Text style={styles.durationStepperLabel}>Minutter</Text>
-                        <View style={styles.durationStepper}>
-                          <Pressable
-                            style={styles.durationStepperButton}
-                            onPress={() =>
-                              handleDurationStepperChange(
-                                'preferredMaxDuration',
-                                'minute',
-                                -1
-                              )
-                            }
-                            accessibilityRole="button"
-                            accessibilityLabel="Mindsk minutter for længst familietid"
-                          >
-                            <Text style={styles.durationStepperButtonText}>-</Text>
-                          </Pressable>
-                          <Text style={styles.durationStepperValue}>
-                            {maxDurationParts.minutes}
-                          </Text>
-                          <Pressable
-                            style={styles.durationStepperButton}
-                            onPress={() =>
-                              handleDurationStepperChange(
-                                'preferredMaxDuration',
-                                'minute',
-                                1
-                              )
-                            }
-                            accessibilityRole="button"
-                            accessibilityLabel="Øg minutter for længst familietid"
-                          >
-                            <Text style={styles.durationStepperButtonText}>+</Text>
-                          </Pressable>
-                        </View>
-                      </View>
-                    </View>
-                  </View>
-                  {fieldErrors.preferredMaxDuration ? (
-                    <Text style={styles.validationMessage}>
-                      {fieldErrors.preferredMaxDuration}
-                    </Text>
-                  ) : null}
-                </View>
-                <Text style={styles.preferenceFootnote}>
-                  Lad felterne st tomme, hvis I er fleksible med bde tidsrum og varighed.
-                </Text>
 
+                    <View style={styles.durationGroup}>
+                      <View style={styles.durationHeader}>
+                        <Text style={styles.durationTitle}>Længst familietid</Text>
+                        <Pressable
+                          onPress={() => handleClearDuration('preferredMaxDuration')}
+                        >
+                          <Text
+                            style={[
+                              styles.timeSelectionClear,
+                              profile.preferredMaxDuration
+                                ? null
+                                : styles.timeSelectionClearDisabled,
+                            ]}
+                          >
+                            Ryd
+                          </Text>
+                        </Pressable>
+                      </View>
+                      <View style={styles.durationChipWrap}>
+                        {MAX_DURATION_PRESETS.map(({ label, minutes }) => {
+                          const isSelected =
+                            Number(profile.preferredMaxDuration) === minutes;
+                          return (
+                            <Pressable
+                              key={`max-${minutes}`}
+                              onPress={() =>
+                                handleSelectDuration('preferredMaxDuration', minutes)
+                              }
+                              style={[
+                                styles.durationChip,
+                                isSelected ? styles.durationChipSelected : null,
+                              ]}
+                            >
+                              <Text
+                                style={[
+                                  styles.durationChipText,
+                                  isSelected ? styles.durationChipTextSelected : null,
+                                ]}
+                              >
+                                {label}
+                              </Text>
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                      <View style={styles.durationCustomCard}>
+                        <View style={styles.durationCustomHeader}>
+                          <Text style={styles.durationCustomLabel}>Tilpas selv</Text>
+                          <Text style={styles.durationCustomValue}>
+                            {formatDurationMinutesLabel(maxDurationMinutes)}
+                          </Text>
+                        </View>
+                        <View style={styles.durationStepperRow}>
+                          <View style={styles.durationStepperColumn}>
+                            <Text style={styles.durationStepperLabel}>Timer</Text>
+                            <View style={styles.durationStepper}>
+                              <Pressable
+                                style={styles.durationStepperButton}
+                                onPress={() =>
+                                  handleDurationStepperChange(
+                                    'preferredMaxDuration',
+                                    'hour',
+                                    -1
+                                  )
+                                }
+                                accessibilityRole="button"
+                                accessibilityLabel="Mindsk timer for længst familietid"
+                              >
+                                <Text style={styles.durationStepperButtonText}>-</Text>
+                              </Pressable>
+                              <Text style={styles.durationStepperValue}>
+                                {maxDurationParts.hours}
+                              </Text>
+                              <Pressable
+                                style={styles.durationStepperButton}
+                                onPress={() =>
+                                  handleDurationStepperChange(
+                                    'preferredMaxDuration',
+                                    'hour',
+                                    1
+                                  )
+                                }
+                                accessibilityRole="button"
+                                accessibilityLabel="Øg timer for længst familietid"
+                              >
+                                <Text style={styles.durationStepperButtonText}>+</Text>
+                              </Pressable>
+                            </View>
+                          </View>
+                          <View style={styles.durationStepperColumn}>
+                            <Text style={styles.durationStepperLabel}>Minutter</Text>
+                            <View style={styles.durationStepper}>
+                              <Pressable
+                                style={styles.durationStepperButton}
+                                onPress={() =>
+                                  handleDurationStepperChange(
+                                    'preferredMaxDuration',
+                                    'minute',
+                                    -1
+                                  )
+                                }
+                                accessibilityRole="button"
+                                accessibilityLabel="Mindsk minutter for længst familietid"
+                              >
+                                <Text style={styles.durationStepperButtonText}>-</Text>
+                              </Pressable>
+                              <Text style={styles.durationStepperValue}>
+                                {maxDurationParts.minutes}
+                              </Text>
+                              <Pressable
+                                style={styles.durationStepperButton}
+                                onPress={() =>
+                                  handleDurationStepperChange(
+                                    'preferredMaxDuration',
+                                    'minute',
+                                    1
+                                  )
+                                }
+                                accessibilityRole="button"
+                                accessibilityLabel="Øg minutter for længst familietid"
+                              >
+                                <Text style={styles.durationStepperButtonText}>+</Text>
+                              </Pressable>
+                            </View>
+                          </View>
+                        </View>
+                      </View>
+                      {fieldErrors.preferredMaxDuration ? (
+                        <Text style={styles.validationMessage}>
+                          {fieldErrors.preferredMaxDuration}
+                        </Text>
+                      ) : null}
+                    </View>
+                    <Text style={styles.preferenceFootnote}>
+                      Lad felterne stå tomme, hvis I er fleksible med både tidsrum og varighed.
+                    </Text>
+                  </View>
+                )}
                 <Button
                   title="Gem profil"
                   onPress={handleSaveProfile}

@@ -158,6 +158,70 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
     fontWeight: '600',
   },
+  preferenceModeWrap: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: spacing.xs,
+    marginBottom: spacing.sm,
+  },
+  preferenceModeChip: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surfaceMuted,
+    marginRight: spacing.xs,
+    marginBottom: spacing.xs,
+  },
+  preferenceModeChipSelected: {
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(230, 138, 46, 0.18)',
+  },
+  preferenceModeChipDisabled: {
+    opacity: 0.5,
+  },
+  preferenceModeChipText: {
+    fontSize: fontSizes.sm,
+    color: colors.text,
+    fontWeight: '600',
+  },
+  preferenceModeChipTextSelected: {
+    color: colors.primaryDark,
+  },
+  preferenceModeChipTextDisabled: {
+    color: colors.mutedText,
+  },
+  customPreferenceSection: {
+    marginTop: spacing.sm,
+  },
+  durationSliderBlock: {
+    marginTop: spacing.sm,
+    marginBottom: spacing.md,
+  },
+  durationSliderHint: {
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+    marginTop: spacing.xs,
+  },
+  preferenceInfoCard: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    backgroundColor: colors.surfaceMuted,
+    marginBottom: spacing.md,
+  },
+  preferenceInfoTitle: {
+    fontSize: fontSizes.md,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  preferenceInfoText: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+    marginTop: spacing.xs,
+  },
   locationGroup: {
     marginBottom: spacing.md,
   },
@@ -174,17 +238,14 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   locationChip: {
-    flexShrink: 0,
-    minWidth: 96,
     paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.md,
+    paddingHorizontal: spacing.xs,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surfaceMuted,
     alignItems: 'center',
     justifyContent: 'center',
-    marginHorizontal: spacing.xs / 2,
   },
   locationChipSelected: {
     borderColor: colors.primary,
@@ -197,6 +258,41 @@ const styles = StyleSheet.create({
   locationChipTextSelected: {
     fontWeight: '700',
     color: colors.primaryDark,
+  },
+  followList: {
+    marginTop: spacing.sm,
+  },
+  followOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    marginBottom: spacing.xs,
+  },
+  followOptionSelected: {
+    borderColor: colors.primary,
+    backgroundColor: 'rgba(230, 138, 46, 0.18)',
+  },
+  followOptionEmoji: {
+    fontSize: fontSizes.xl,
+    marginRight: spacing.sm,
+  },
+  followOptionBody: {
+    flex: 1,
+  },
+  followOptionName: {
+    fontSize: fontSizes.md,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  followOptionHint: {
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+    marginTop: spacing.xxs,
   },
   genderGroup: {
     marginBottom: spacing.md,
@@ -231,19 +327,46 @@ const styles = StyleSheet.create({
   dayTimeList: {
     marginTop: spacing.xs,
   },
-  dayTimeCard: {
+  dayAccordion: {
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,
-    padding: spacing.sm,
-    marginBottom: spacing.sm,
     backgroundColor: colors.surface,
+    marginBottom: spacing.sm,
+    overflow: 'hidden',
   },
-  dayTimeHeader: {
+  dayAccordionHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: spacing.xs,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.sm,
+  },
+  dayAccordionHeaderMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  dayAccordionHeaderExpanded: {
+    borderBottomWidth: 1,
+    borderBottomColor: colors.border,
+  },
+  dayAccordionSwitch: {
+    marginLeft: spacing.sm,
+  },
+  dayAccordionBody: {
+    padding: spacing.sm,
+    backgroundColor: colors.surfaceMuted,
+  },
+  dayAccordionBodyHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.sm,
+  },
+  dayTimeHeaderTextWrap: {
+    flex: 1,
+    marginRight: spacing.sm,
   },
   dayTimeLabel: {
     fontSize: fontSizes.sm,
@@ -254,23 +377,75 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.xs,
     color: colors.mutedText,
   },
-  dayTimeActions: {
-    alignItems: 'flex-end',
+  dayToggleHint: {
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+    flex: 1,
+    marginRight: spacing.sm,
+  },
+  addSlotButton: {
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.md,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    backgroundColor: colors.surface,
+  },
+  addSlotButtonDisabled: {
+    borderColor: colors.border,
+    opacity: 0.5,
+  },
+  addSlotButtonText: {
+    fontSize: fontSizes.xs,
+    fontWeight: '700',
+    color: colors.primaryDark,
+  },
+  addSlotButtonTextDisabled: {
+    color: colors.mutedText,
+  },
+  timeSlotCard: {
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.sm,
+    padding: spacing.sm,
+    marginBottom: spacing.sm,
+    backgroundColor: colors.surfaceMuted,
+  },
+  timeSlotHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: spacing.xs,
+  },
+  timeSlotLabel: {
+    fontSize: fontSizes.sm,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  timeSlotRemove: {
+    fontSize: fontSizes.xs,
+    color: colors.error,
+    fontWeight: '600',
+  },
+  dayEmptyHint: {
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+    marginBottom: spacing.sm,
   },
   timePresetWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
+    justifyContent: 'space-between',
     marginTop: spacing.xs,
     marginBottom: spacing.xs,
   },
   timePresetChip: {
+    width: '48%',
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: 999,
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.sm,
-    marginRight: spacing.xs,
     marginBottom: spacing.xs,
     backgroundColor: colors.surface,
   },
@@ -291,33 +466,6 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
   },
   timePresetRangeSelected: {
-    color: colors.primaryDark,
-  },
-  dayChipsWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginVertical: spacing.xs,
-  },
-  dayChip: {
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.md,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.surfaceMuted,
-    marginRight: spacing.xs,
-    marginBottom: spacing.xs,
-  },
-  dayChipSelected: {
-    borderColor: colors.primary,
-    backgroundColor: 'rgba(230, 138, 46, 0.18)',
-  },
-  dayChipText: {
-    fontSize: fontSizes.sm,
-    color: colors.text,
-  },
-  dayChipTextSelected: {
-    fontWeight: '700',
     color: colors.primaryDark,
   },
   durationGroup: {
@@ -435,6 +583,7 @@ const styles = StyleSheet.create({
   },
   timeSelectionRow: {
     flexDirection: 'row',
+    alignItems: 'center',
     marginTop: spacing.xs,
     marginBottom: spacing.xs,
   },
@@ -442,23 +591,30 @@ const styles = StyleSheet.create({
     flex: 1,
     borderWidth: 1,
     borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.md,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.xs,
+    paddingHorizontal: spacing.sm,
     marginRight: spacing.xs,
     backgroundColor: colors.surface,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
   },
   timeSelectionButtonRight: {
     marginRight: 0,
   },
   timeSelectionLabel: {
-    fontSize: fontSizes.xs,
+    fontSize: fontSizes.xxs,
     color: colors.mutedText,
     marginBottom: spacing.xxs,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   timeSelectionValue: {
-    fontSize: fontSizes.md,
-    fontWeight: '600',
+    fontSize: fontSizes.sm,
+    fontWeight: '700',
     color: colors.text,
   },
   inlineTimePicker: {

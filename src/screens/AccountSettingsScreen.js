@@ -12,6 +12,10 @@ import Button from '../components/Button';
 import ErrorMessage from '../components/ErrorMessage';
 import { auth, db, firebase } from '../lib/firebase';
 import { DEFAULT_AVATAR_EMOJI } from '../constants/avatarEmojis';
+import {
+  FAMILY_PREFERENCE_MODES,
+  normalizeFamilyPreferenceMode,
+} from '../constants/familyPreferenceModes';
 import styles from '../styles/screens/AccountSettingsScreenStyles';
 
 const WEEK_DAY_LABELS = {
@@ -31,25 +35,19 @@ const formatTimeWindows = (timeWindows = {}) => {
 
   const summaries = [];
   Object.entries(WEEK_DAY_LABELS).forEach(([dayKey, label]) => {
-    const entryList = timeWindows[dayKey];
-    if (Array.isArray(entryList) && entryList.length) {
-      const entry = entryList[0];
-      if (entry?.start && entry?.end) {
-        summaries.push(`${label}: ${entry.start}-${entry.end}`);
-      }
+    const entryList = Array.isArray(timeWindows[dayKey])
+      ? timeWindows[dayKey]
+      : [];
+    const ranges = entryList
+      .filter((entry) => entry?.start && entry?.end)
+      .map((entry) => `${entry.start}-${entry.end}`);
+    if (ranges.length) {
+      summaries.push(`${label}: ${ranges.join(', ')}`);
     }
   });
 
   if (summaries.length) {
-    return summaries.join(', ');
-  }
-
-  const defaultEntry =
-    Array.isArray(timeWindows.default) && timeWindows.default.length
-      ? timeWindows.default[0]
-      : null;
-  if (defaultEntry?.start && defaultEntry?.end) {
-    return `Standard: ${defaultEntry.start}-${defaultEntry.end}`;
+    return summaries.join(' · ');
   }
   return 'Ikke udfyldt';
 };
@@ -80,6 +78,32 @@ const formatPreferredDays = (days) => {
     .filter((label) => typeof label === 'string' && label.length > 0);
 
   return labels.length ? labels.join(', ') : 'Ikke udfyldt';
+};
+
+const formatPreferenceSource = (profile, familyMembers = []) => {
+  if (!profile) {
+    return 'Ukendt';
+  }
+  const normalizedMode = normalizeFamilyPreferenceMode(
+    profile.familyPreferenceMode
+  );
+  if (normalizedMode === FAMILY_PREFERENCE_MODES.NONE) {
+    return 'Ingen præferencer';
+  }
+  if (normalizedMode === FAMILY_PREFERENCE_MODES.FOLLOW) {
+    const target = Array.isArray(familyMembers)
+      ? familyMembers.find(
+          (member) =>
+            typeof member?.userId === 'string' &&
+            member.userId === profile.familyPreferenceFollowUserId
+        )
+      : null;
+    if (target?.displayName) {
+      return `Følger ${target.displayName}`;
+    }
+    return 'Følger familiemedlem';
+  }
+  return 'Tilpasset';
 };
 
 const AccountSettingsScreen = ({ navigation }) => {
@@ -176,6 +200,13 @@ const AccountSettingsScreen = ({ navigation }) => {
             typeof userData.avatarEmoji === 'string' && userData.avatarEmoji.trim().length
               ? userData.avatarEmoji.trim()
               : DEFAULT_AVATAR_EMOJI,
+          familyPreferenceMode: normalizeFamilyPreferenceMode(
+            userData.familyPreferenceMode
+          ),
+          familyPreferenceFollowUserId:
+            typeof userData.familyPreferenceFollowUserId === 'string'
+              ? userData.familyPreferenceFollowUserId.trim()
+              : '',
         });
 
         if (unsubscribeFamily) {
@@ -750,6 +781,48 @@ const AccountSettingsScreen = ({ navigation }) => {
     typeof userProfile?.avatarEmoji === 'string' && userProfile.avatarEmoji.trim().length
       ? userProfile.avatarEmoji.trim()
       : DEFAULT_AVATAR_EMOJI;
+  const normalizedPreferenceMode = normalizeFamilyPreferenceMode(
+    userProfile?.familyPreferenceMode
+  );
+  const followedMember = useMemo(() => {
+    if (normalizedPreferenceMode !== FAMILY_PREFERENCE_MODES.FOLLOW) {
+      return null;
+    }
+    const familyMembers = Array.isArray(family?.members) ? family.members : [];
+    return (
+      familyMembers.find(
+        (member) =>
+          typeof member?.userId === 'string' &&
+          member.userId === userProfile?.familyPreferenceFollowUserId
+      ) || null
+    );
+  }, [
+    family?.members,
+    normalizedPreferenceMode,
+    userProfile?.familyPreferenceFollowUserId,
+  ]);
+  const preferenceOverrideLabel =
+    normalizedPreferenceMode === FAMILY_PREFERENCE_MODES.FOLLOW
+      ? `Følger ${followedMember?.displayName || 'familiemedlem'}`
+      : 'Ingen præferencer';
+  const shouldShowCustomPreferences =
+    normalizedPreferenceMode === FAMILY_PREFERENCE_MODES.CUSTOM;
+  const preferredDaysLabel = shouldShowCustomPreferences
+    ? formatPreferredDays(userProfile?.preferredFamilyDays)
+    : preferenceOverrideLabel;
+  const preferredTimeWindowsLabel = shouldShowCustomPreferences
+    ? formatTimeWindows(userProfile?.preferredFamilyTimeWindows)
+    : preferenceOverrideLabel;
+  const preferredDurationLabel = shouldShowCustomPreferences
+    ? formatDurationRange(
+        typeof userProfile?.preferredMinDuration === 'number'
+          ? userProfile.preferredMinDuration
+          : null,
+        typeof userProfile?.preferredMaxDuration === 'number'
+          ? userProfile.preferredMaxDuration
+          : null
+      )
+    : preferenceOverrideLabel;
 
   const shouldShowStatusCard =
     Boolean(error) || Boolean(actionError) || Boolean(statusMessage);
@@ -804,23 +877,17 @@ const AccountSettingsScreen = ({ navigation }) => {
                 Lokation: {userProfile?.location || 'Ikke udfyldt'}
               </Text>
               <Text style={styles.fieldText}>
-                Foretrukne dage:{' '}
-                {formatPreferredDays(userProfile?.preferredFamilyDays)}
+                Foretrukne dage: {preferredDaysLabel}
               </Text>
               <Text style={styles.fieldText}>
-                Foretrukket tidsrum:{' '}
-                {formatTimeWindows(userProfile?.preferredFamilyTimeWindows)}
+                Foretrukket tidsrum: {preferredTimeWindowsLabel}
               </Text>
               <Text style={styles.fieldText}>
-                Varighedsgrænser:{' '}
-                {formatDurationRange(
-                  typeof userProfile?.preferredMinDuration === 'number'
-                    ? userProfile.preferredMinDuration
-                    : null,
-                  typeof userProfile?.preferredMaxDuration === 'number'
-                    ? userProfile.preferredMaxDuration
-                    : null
-                )}
+                Varighedsgrænser: {preferredDurationLabel}
+              </Text>
+              <Text style={styles.fieldText}>
+                Præferencekilde:{' '}
+                {formatPreferenceSource(userProfile, family?.members || [])}
               </Text>
             </>
           )}
