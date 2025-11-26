@@ -22,8 +22,6 @@ import { auth, db, firebase } from '../lib/firebase';
 import { colors } from '../styles/theme';
 import styles from '../styles/screens/FamilySetupScreenStyles';
 
-const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 const adjectives = [
   'glad',
   'stolt',
@@ -128,8 +126,6 @@ const FamilySetupScreen = ({ navigation }) => {
   const [mode, setMode] = useState('create');
   const [familyName, setFamilyName] = useState('');
   const [familyCode, setFamilyCode] = useState('');
-  const [inviteEmail, setInviteEmail] = useState('');
-  const [invitedEmails, setInvitedEmails] = useState([]);
   const [error, setError] = useState('');
   const [statusMessage, setStatusMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -218,78 +214,6 @@ const FamilySetupScreen = ({ navigation }) => {
     setStatusMessage('');
   }, [mode]);
 
-  const handleAddInviteEmail = () => {
-    // Tilføjer en e-mail til invitationer efter normalisering og validering.
-    const normalized = inviteEmail.trim().toLowerCase();
-
-    if (!normalized) {
-      setError('Indtast en e-mail, før du tilføjer den.');
-      return;
-    }
-
-    if (!emailRegex.test(normalized)) {
-      setError('E-mailen skal være gyldig.');
-      return;
-    }
-
-    if (normalized === userEmail.toLowerCase()) {
-      setError('Du er automatisk med i familien og behøver ikke tilføjes.');
-      return;
-    }
-
-    if (invitedEmails.includes(normalized)) {
-      setError('E-mailen er allerede tilføjet.');
-      return;
-    }
-
-    setInvitedEmails((prev) => [...prev, normalized]);
-    setInviteEmail('');
-    setError('');
-  };
-
-  const handleRemoveInvite = (email) => {
-    // Fjerner en planlagt invitation fra listen uden mutation.
-    setInvitedEmails((prev) => prev.filter((item) => item !== email));
-  };
-
-  const resolveInvitees = async (familyId) => {
-    // Finder eksisterende brugere med matchende e-mail og opdeler dem i medlems- og pending-lister.
-    const resolvedMembers = [];
-    const pendingInvites = [];
-    const conflicts = [];
-    const lookups = invitedEmails.map(async (email) => {
-      const snapshot = await db
-        .collection('users')
-        .where('email', '==', email)
-        .limit(1)
-        .get();
-
-      if (snapshot.empty) {
-        pendingInvites.push(email);
-        return;
-      }
-
-      const memberDoc = snapshot.docs[0];
-      const memberData = memberDoc.data() ?? {};
-
-      if (memberData.familyId && memberData.familyId !== familyId) {
-        conflicts.push(email);
-        pendingInvites.push(email);
-        return;
-      }
-
-      resolvedMembers.push({
-        userId: memberDoc.id,
-        email,
-        role: 'member',
-      });
-    });
-
-    await Promise.all(lookups);
-
-    return { resolvedMembers, pendingInvites, conflicts };
-  };
-
   const handleCreateFamily = async () => {
     // Opretter en ny familie i Firestore og knytter inviterede medlemmer.
     if (!userId) {
@@ -311,12 +235,9 @@ const FamilySetupScreen = ({ navigation }) => {
       const generatedFamilyCode = await generateFamilyCode();
       const familyRef = db.collection('families').doc(generatedFamilyCode);
       const codeVariants = buildFamilyCodeCandidates(familyRef.id);
-      const { resolvedMembers, pendingInvites, conflicts } =
-        await resolveInvitees(familyRef.id);
 
       const members = [
         { userId, email: userEmail.toLowerCase(), role: 'admin' },
-        ...resolvedMembers,
       ];
 
       await familyRef.set({
@@ -324,7 +245,7 @@ const FamilySetupScreen = ({ navigation }) => {
         ownerId: userId,
         ownerEmail: userEmail.toLowerCase(),
         members,
-        pendingInvites,
+        pendingInvites: [],
         joinRequests: [],
         codeVariants: codeVariants.length ? codeVariants : [familyRef.id],
         createdAt: firebase.firestore.FieldValue.serverTimestamp(),
@@ -338,38 +259,20 @@ const FamilySetupScreen = ({ navigation }) => {
         { merge: true }
       );
 
-      await Promise.all(
-        resolvedMembers.map((member) =>
-          db.collection('users').doc(member.userId).set(
-            {
-              familyId: familyRef.id,
-              familyRole: 'member',
-            },
-            { merge: true }
-          )
-        )
-      );
-
       setExistingFamily({
         id: generatedFamilyCode,
         name: trimmedName,
         ownerId: userId,
         ownerEmail: userEmail.toLowerCase(),
         members,
-        pendingInvites,
+        pendingInvites: [],
         joinRequests: [],
       });
 
       setStatusMessage(
-        conflicts.length
-          ? `Familien er oprettet med ID ${generatedFamilyCode}. Følgende e-mails kunne ikke knyttes automatisk: ${conflicts.join(
-              ', '
-            )}.`
-          : `Familien er oprettet og dine medlemmer er tilføjet. Del familie ID'et ${generatedFamilyCode} med dine familiemedlemmer.`
+        `Familien er oprettet. Del familie ID'et ${generatedFamilyCode} med dine familiemedlemmer.`
       );
-      setInvitedEmails([]);
       setFamilyName('');
-      setInviteEmail('');
     } catch (_error) {
       setError('Kunne ikke oprette familien. Prøv igen.');
     } finally {
@@ -1106,8 +1009,6 @@ const FamilySetupScreen = ({ navigation }) => {
       setMode('create');
       setFamilyName('');
       setFamilyCode('');
-      setInvitedEmails([]);
-      setInviteEmail('');
       setCopyFeedback('');
       setStatusMessage(
         'Familien er slettet. Du kan nu oprette eller tilslutte en ny familie.'
@@ -1144,30 +1045,38 @@ const FamilySetupScreen = ({ navigation }) => {
     return (
       <ScrollView contentContainerStyle={styles.scrollContent}>
         <View style={styles.container}>
-          <Text style={styles.title}>Familien er klar</Text>
-          <Text style={styles.subtitle}>
-            Du er tilknyttet familien{' '}
-            <Text style={styles.highlight}>{existingFamily.name}</Text>.
+        <View style={styles.heroCard}>
+          <Text style={styles.heroTitle}>
+            {`Familien "${existingFamily.name || 'FamTime'}" er oprettet.`}
           </Text>
-          <Text style={styles.familyIdText}>
-            Familie ID: {existingFamily.id}
+          <Text style={styles.heroSubtitle}>
+            {existingFamily.name
+              ? `Del familie-ID'et med ${existingFamily.name}, så alle kan komme med i FamTime.`
+              : "Del familie-ID'et med dine familiemedlemmer, så de kan tilslutte sig."}
           </Text>
-          <Pressable
-            onPress={async () => {
-              await Clipboard.setStringAsync(existingFamily.id);
-              setCopyFeedback('Familie ID kopieret.');
-              setTimeout(() => setCopyFeedback(''), 2500);
-            }}
-            style={styles.copyButton}
-          >
-            <Text style={styles.copyButtonText}>Kopier familie ID</Text>
-          </Pressable>
+          <View style={styles.familyCodeRow}>
+            <View style={styles.familyCodePill}>
+              <Text style={styles.familyCodeLabel}>Familie ID</Text>
+              <Text style={styles.familyCodeValue}>{existingFamily.id}</Text>
+            </View>
+            <Pressable
+              onPress={async () => {
+                await Clipboard.setStringAsync(existingFamily.id);
+                setCopyFeedback('Familie ID kopieret.');
+                setTimeout(() => setCopyFeedback(''), 2500);
+              }}
+              style={styles.copyIdButton}
+            >
+              <Text style={styles.copyIdButtonText}>Kopier ID</Text>
+            </Pressable>
+          </View>
           {copyFeedback ? (
             <Text style={styles.copyFeedback}>{copyFeedback}</Text>
           ) : null}
+        </View>
 
-          <ErrorMessage message={error} />
-          {statusMessage ? (
+        <ErrorMessage message={error} />
+        {statusMessage ? (
             <Text style={styles.successText}>{statusMessage}</Text>
           ) : null}
 
@@ -1346,35 +1255,6 @@ const FamilySetupScreen = ({ navigation }) => {
               placeholder="Fx Team Jensen"
               style={styles.field}
             />
-
-            <FormInput
-              label="Tilføj familiemedlemmer (e-mail)"
-              value={inviteEmail}
-              onChangeText={setInviteEmail}
-              placeholder="familiemedlem@email.dk"
-              style={styles.field}
-            />
-            <Button
-              title="Tilføj e-mail"
-              onPress={handleAddInviteEmail}
-              disabled={loading}
-              style={styles.addEmailButton}
-            />
-
-            {invitedEmails.length ? (
-              <View style={styles.inviteList}>
-                {invitedEmails.map((email) => (
-                  <Pressable
-                    key={email}
-                    onPress={() => handleRemoveInvite(email)}
-                    style={styles.inviteChip}
-                  >
-                    <Text style={styles.inviteChipText}>{email}</Text>
-                    <Text style={styles.inviteChipRemove}>x</Text>
-                  </Pressable>
-                ))}
-              </View>
-            ) : null}
 
             <Button
               title="Opret familie"

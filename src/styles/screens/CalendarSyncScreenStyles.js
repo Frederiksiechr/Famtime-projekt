@@ -5,25 +5,32 @@ import { colors, spacing, fontSizes, radius } from '../theme';
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: spacing.lg,
+    paddingHorizontal: spacing.lg,
+    paddingTop: spacing.xl * 2,
     backgroundColor: colors.background,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
+    alignItems: 'stretch',
   },
   title: {
     fontSize: fontSizes.xl,
     fontWeight: '700',
-    color: colors.text,
-    marginBottom: spacing.sm,
+    color: colors.primary,
+    marginBottom: spacing.xs,
+    textAlign: 'center',
   },
   subtitle: {
+    fontSize: fontSizes.lg - 2,
+    fontWeight: '600',
+    color: colors.text,
+    textAlign: 'center',
+    marginBottom: spacing.md,
+  },
+  description: {
     fontSize: fontSizes.md,
     color: colors.mutedText,
-    marginBottom: spacing.lg,
-  },
-  statusText: {
-    color: colors.primary,
-    fontSize: fontSizes.md,
-    marginTop: spacing.md,
+    textAlign: 'center',
+    marginBottom: spacing.sm,
+    lineHeight: 22,
   },
   continueButton: {
     marginTop: spacing.lg,

@@ -1,8 +1,8 @@
-/**
+﻿/**
  * LandingScreen
  *
- * - Beskyttet skærm der vises efter login og samler brugerinformation.
- * - Formularen gemmer profiloplysninger i Firestore og giver mulighed for at logge ud.
+ * - Beskyttet skÃ¦rm der vises efter login og samler brugerinformation.
+ * - Formularen gemmer profiloplysninger i Firestore.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -19,7 +19,6 @@ import Button from '../components/Button';
 import FormInput from '../components/FormInput';
 import ErrorMessage from '../components/ErrorMessage';
 import { auth, db, firebase } from '../lib/firebase';
-import { getFriendlyAuthError } from '../lib/errorMessages';
 import { colors } from '../styles/theme';
 import styles from '../styles/screens/LandingScreenStyles';
 import * as Clipboard from 'expo-clipboard';
@@ -35,8 +34,8 @@ const WEEK_DAYS = [
   { key: 'wednesday', label: 'Onsdag' },
   { key: 'thursday', label: 'Torsdag' },
   { key: 'friday', label: 'Fredag' },
-  { key: 'saturday', label: 'Lørdag' },
-  { key: 'sunday', label: 'Søndag' },
+  { key: 'saturday', label: 'LÃ¸rdag' },
+  { key: 'sunday', label: 'SÃ¸ndag' },
 ];
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -190,7 +189,7 @@ const adjustDurationMinutesByPart = (currentMinutes, part, delta) => {
 const GENDER_OPTIONS = ['Kvinde', 'Mand', 'Andet'];
 const MIN_AGE = 5;
 const MAX_AGE = 100;
-const DANISH_CITY_OPTIONS = ['København', 'Odense', 'Aalborg'];
+const DANISH_CITY_OPTIONS = ['KÃ¸benhavn', 'Odense', 'Aalborg'];
 
 const toMinutes = (value) => {
   if (typeof value !== 'string') {
@@ -235,7 +234,7 @@ const formatTimeSelectionDisplay = (value) => {
   if (isValidTimeValue(value)) {
     return value;
   }
-  return 'Vælg tidspunkt';
+  return 'VÃ¦lg tidspunkt';
 };
 
 const extractPrimaryTimeWindow = (timeWindows = {}) => {
@@ -389,7 +388,6 @@ const hydrateDayTimeSelections = (
 
 const LandingScreen = ({ navigation, route }) => {
   const isEditMode = route?.params?.mode === 'edit';
-  const [logoutError, setLogoutError] = useState('');
   const [generalError, setGeneralError] = useState('');
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -859,16 +857,16 @@ const LandingScreen = ({ navigation, route }) => {
     if (!trimmedAge) {
       nextErrors.age = 'Alder skal udfyldes.';
     } else if (!/^\d+$/.test(trimmedAge)) {
-      nextErrors.age = 'Alder skal være et tal.';
+      nextErrors.age = 'Alder skal vÃ¦re et tal.';
     } else {
       const numericAge = Number(trimmedAge);
       if (numericAge < MIN_AGE || numericAge > MAX_AGE) {
-        nextErrors.age = `Alder skal være mellem ${MIN_AGE} og ${MAX_AGE}.`;
+        nextErrors.age = `Alder skal vÃ¦re mellem ${MIN_AGE} og ${MAX_AGE}.`;
       }
     }
 
     if (!profile.gender.trim()) {
-      nextErrors.gender = 'Køn skal udfyldes.';
+      nextErrors.gender = 'KÃ¸n skal udfyldes.';
     }
 
     if (!nextErrors.timeWindows) {
@@ -883,7 +881,7 @@ const LandingScreen = ({ navigation, route }) => {
           continue;
         }
         if (!startValue || !endValue) {
-          nextErrors.timeWindows = `Angiv både start og slut for ${day.label}.`;
+          nextErrors.timeWindows = `Angiv bÃ¥de start og slut for ${day.label}.`;
           break;
         }
         if (!isValidTimeValue(startValue) || !isValidTimeValue(endValue)) {
@@ -891,7 +889,7 @@ const LandingScreen = ({ navigation, route }) => {
           break;
         }
         if (!isValidTimeRange(startValue, endValue)) {
-          nextErrors.timeWindows = `Sluttid skal være efter starttid for ${day.label}.`;
+          nextErrors.timeWindows = `Sluttid skal vÃ¦re efter starttid for ${day.label}.`;
           break;
         }
       }
@@ -903,15 +901,15 @@ const LandingScreen = ({ navigation, route }) => {
     const maxDurationValue = maxDurationRaw ? Number(maxDurationRaw) : null;
 
     if (minDurationRaw && (!Number.isFinite(minDurationValue) || minDurationValue <= 0)) {
-      nextErrors.preferredMinDuration = 'Kortest familietid skal være et positivt tal (minutter).';
+      nextErrors.preferredMinDuration = 'Kortest familietid skal vÃ¦re et positivt tal (minutter).';
     }
 
     if (maxDurationRaw && (!Number.isFinite(maxDurationValue) || maxDurationValue <= 0)) {
-      nextErrors.preferredMaxDuration = 'Længst familietid skal være et positivt tal (minutter).';
+      nextErrors.preferredMaxDuration = 'LÃ¦ngst familietid skal vÃ¦re et positivt tal (minutter).';
     }
 
     if (Number.isFinite(minDurationValue) && Number.isFinite(maxDurationValue) && maxDurationValue < minDurationValue) {
-      nextErrors.preferredMaxDuration = 'Længst familietid skal være større end kortest familietid.';
+      nextErrors.preferredMaxDuration = 'LÃ¦ngst familietid skal vÃ¦re stÃ¸rre end kortest familietid.';
     }
 
     setFieldErrors(nextErrors);
@@ -920,7 +918,7 @@ const LandingScreen = ({ navigation, route }) => {
 
   const handleSaveProfile = async () => {
     if (!userId) {
-      setGeneralError('Ingen bruger fundet. Prøv at logge ind igen.');
+      setGeneralError('Ingen bruger fundet. PrÃ¸v at logge ind igen.');
       return;
     }
 
@@ -1036,7 +1034,7 @@ const LandingScreen = ({ navigation, route }) => {
           } catch (_emojiError) {
             emojiSyncFailed = true;
             setGeneralError(
-              'Profilen er gemt, men emoji kunne ikke opdateres for familien. Prøv igen.'
+              'Profilen er gemt, men emoji kunne ikke opdateres for familien. PrÃ¸v igen.'
             );
           }
         }
@@ -1055,18 +1053,9 @@ const LandingScreen = ({ navigation, route }) => {
         navigation.navigate('CalendarSync');
       }
     } catch (_error) {
-      setGeneralError('Kunne ikke gemme dine oplysninger. Prøv igen.');
+      setGeneralError('Kunne ikke gemme dine oplysninger. PrÃ¸v igen.');
     } finally {
       setSavingProfile(false);
-    }
-  };
-
-  const handleLogout = async () => {
-    try {
-      setLogoutError('');
-      await auth.signOut();
-    } catch (logoutErr) {
-      setLogoutError(getFriendlyAuthError(logoutErr));
     }
   };
 
@@ -1091,8 +1080,8 @@ const LandingScreen = ({ navigation, route }) => {
             </Text>
             <Text style={styles.sectionIntro}>
               {isEditMode
-                ? 'Redigér dine profiloplysninger og familiepræferencer.'
-                : 'Fortæl os lidt om dig selv, så familien kan lære dig bedre at kende.'}
+                ? 'RedigÃ©r dine profiloplysninger og familieprÃ¦ferencer.'
+                : 'FortÃ¦l os lidt om dig selv, sÃ¥ familien kan lÃ¦re dig bedre at kende.'}
             </Text>
           </View>
 
@@ -1116,7 +1105,7 @@ const LandingScreen = ({ navigation, route }) => {
               ) : (
                 <>
                   <View style={styles.emojiSection}>
-                    <Text style={styles.emojiLabel}>Vælg din emoji</Text>
+                    <Text style={styles.emojiLabel}>VÃ¦lg din emoji</Text>
                     <Text style={styles.emojiHint}>
                       Din emoji bruges i familiens kalender og lister.
                     </Text>
@@ -1133,7 +1122,7 @@ const LandingScreen = ({ navigation, route }) => {
                             ]}
                             accessibilityRole="button"
                             accessibilityState={{ selected: isSelected }}
-                            accessibilityLabel={`Vælg emoji ${emoji}`}
+                            accessibilityLabel={`VÃ¦lg emoji ${emoji}`}
                           >
                             <Text
                               style={[
@@ -1169,7 +1158,7 @@ const LandingScreen = ({ navigation, route }) => {
                     style={styles.field}
                   />
                   <View style={styles.genderGroup}>
-                    <Text style={styles.preferenceSubtitle}>Køn</Text>
+                    <Text style={styles.preferenceSubtitle}>KÃ¸n</Text>
                     <View style={styles.genderChipsWrap}>
                       {GENDER_OPTIONS.map((option) => {
                         const selected = profile.gender === option;
@@ -1183,7 +1172,7 @@ const LandingScreen = ({ navigation, route }) => {
                             ]}
                             accessibilityRole="button"
                             accessibilityState={{ selected }}
-                            accessibilityLabel={`Vælg ${option}`}
+                            accessibilityLabel={`VÃ¦lg ${option}`}
                           >
                             <Text
                               style={[
@@ -1205,7 +1194,7 @@ const LandingScreen = ({ navigation, route }) => {
                   </View>
                 <View style={styles.locationGroup}>
                   <Text style={styles.preferenceSubtitle}>Lokation (valgfrit)</Text>
-                  <Text style={styles.locationHint}>Vælg den storby du bor tættest på</Text>
+                  <Text style={styles.locationHint}>VÃ¦lg den storby du bor tÃ¦ttest pÃ¥</Text>
                   <View style={styles.locationChipsWrap}>
                     {DANISH_CITY_OPTIONS.map((city) => {
                       const selected = selectedLocation === city;
@@ -1219,7 +1208,7 @@ const LandingScreen = ({ navigation, route }) => {
                           ]}
                           accessibilityRole="button"
                           accessibilityState={{ selected }}
-                          accessibilityLabel={`Vælg ${city}`}
+                          accessibilityLabel={`VÃ¦lg ${city}`}
                         >
                           <Text
                             style={[
@@ -1235,16 +1224,16 @@ const LandingScreen = ({ navigation, route }) => {
                   </View>
                   {hasLegacyLocation ? (
                     <Text style={styles.validationMessage}>
-                      {`Din tidligere lokation "${normalizedLocation}" understøttes ikke længere. Vælg en by fra listen.`}
+                      {`Din tidligere lokation "${normalizedLocation}" understÃ¸ttes ikke lÃ¦ngere. VÃ¦lg en by fra listen.`}
                     </Text>
                   ) : null}
                 </View>
 
                 <View style={styles.sectionDivider} />
 
-                <Text style={styles.preferenceTitle}>Familietidspræferencer</Text>
+                <Text style={styles.preferenceTitle}>FamilietidsprÃ¦ferencer</Text>
                 <Text style={styles.preferenceHint}>
-                  Hjælp FamTime med at foreslå tidspunkter, der passer hele familien.
+                  HjÃ¦lp FamTime med at foreslÃ¥ tidspunkter, der passer hele familien.
                 </Text>
                 <Text style={styles.preferenceSubtitle}>Foretrukne dage</Text>
                 <View style={styles.dayChipsWrap}>
@@ -1277,12 +1266,12 @@ const LandingScreen = ({ navigation, route }) => {
 
                 <Text style={styles.preferenceSubtitle}>Foretrukket tidsrum</Text>
                 <Text style={styles.preferenceFootnote}>
-                  Vælg tidsrum pr. dag, så FamTime ved hvornår familien typisk kan mødes.
+                  VÃ¦lg tidsrum pr. dag, sÃ¥ FamTime ved hvornÃ¥r familien typisk kan mÃ¸des.
                 </Text>
                 <View style={styles.dayTimeList}>
                   {selectedDayObjects.length === 0 ? (
                     <Text style={styles.preferenceFootnote}>
-                      Vælg mindst én foretrukken dag for at indstille tidsrum.
+                      VÃ¦lg mindst Ã©n foretrukken dag for at indstille tidsrum.
                     </Text>
                   ) : (
                     selectedDayObjects.map((day) => {
@@ -1337,7 +1326,7 @@ const LandingScreen = ({ navigation, route }) => {
                                       : null,
                                   ]}
                                   accessibilityRole="button"
-                                  accessibilityLabel={`Vælg ${preset.label} for ${day.label}`}
+                                  accessibilityLabel={`VÃ¦lg ${preset.label} for ${day.label}`}
                                 >
                                   <Text
                                     style={[
@@ -1396,7 +1385,7 @@ const LandingScreen = ({ navigation, route }) => {
                               >
                                 {isValidTimeRange(selection.start, selection.end)
                                   ? `${selection.start}-${selection.end}`
-                                  : 'Vælg tider'}
+                                  : 'VÃ¦lg tider'}
                               </Text>
                             </Pressable>
                           </View>
@@ -1456,7 +1445,7 @@ const LandingScreen = ({ navigation, route }) => {
                                       <Text
                                         style={styles.timePickerCloseText}
                                       >
-                                        Færdig
+                                        FÃ¦rdig
                                       </Text>
                                     </Pressable>
                                   ) : null}
@@ -1562,7 +1551,7 @@ const LandingScreen = ({ navigation, route }) => {
                               )
                             }
                             accessibilityRole="button"
-                            accessibilityLabel="Øg timer for kortest familietid"
+                            accessibilityLabel="Ã˜g timer for kortest familietid"
                           >
                             <Text style={styles.durationStepperButtonText}>+</Text>
                           </Pressable>
@@ -1603,7 +1592,7 @@ const LandingScreen = ({ navigation, route }) => {
                               )
                             }
                             accessibilityRole="button"
-                            accessibilityLabel="Øg minutter for kortest familietid"
+                            accessibilityLabel="Ã˜g minutter for kortest familietid"
                           >
                             <Text style={styles.durationStepperButtonText}>+</Text>
                           </Pressable>
@@ -1619,7 +1608,7 @@ const LandingScreen = ({ navigation, route }) => {
                 </View>
                 <View style={styles.durationGroup}>
                   <View style={styles.durationHeader}>
-                    <Text style={styles.durationTitle}>Længst familietid</Text>
+                    <Text style={styles.durationTitle}>LÃ¦ngst familietid</Text>
                     <Pressable
                       onPress={() => handleClearDuration('preferredMaxDuration')}
                     >
@@ -1683,7 +1672,7 @@ const LandingScreen = ({ navigation, route }) => {
                               )
                             }
                             accessibilityRole="button"
-                            accessibilityLabel="Mindsk timer for længst familietid"
+                            accessibilityLabel="Mindsk timer for lÃ¦ngst familietid"
                           >
                             <Text style={styles.durationStepperButtonText}>-</Text>
                           </Pressable>
@@ -1700,7 +1689,7 @@ const LandingScreen = ({ navigation, route }) => {
                               )
                             }
                             accessibilityRole="button"
-                            accessibilityLabel="Øg timer for længst familietid"
+                            accessibilityLabel="Ã˜g timer for lÃ¦ngst familietid"
                           >
                             <Text style={styles.durationStepperButtonText}>+</Text>
                           </Pressable>
@@ -1719,7 +1708,7 @@ const LandingScreen = ({ navigation, route }) => {
                               )
                             }
                             accessibilityRole="button"
-                            accessibilityLabel="Mindsk minutter for længst familietid"
+                            accessibilityLabel="Mindsk minutter for lÃ¦ngst familietid"
                           >
                             <Text style={styles.durationStepperButtonText}>-</Text>
                           </Pressable>
@@ -1736,7 +1725,7 @@ const LandingScreen = ({ navigation, route }) => {
                               )
                             }
                             accessibilityRole="button"
-                            accessibilityLabel="Øg minutter for længst familietid"
+                            accessibilityLabel="Ã˜g minutter for lÃ¦ngst familietid"
                           >
                             <Text style={styles.durationStepperButtonText}>+</Text>
                           </Pressable>
@@ -1790,14 +1779,6 @@ const LandingScreen = ({ navigation, route }) => {
             </View>
           ) : null}
 
-          <View style={styles.card}>
-            <Text style={styles.cardTitle}>Konto</Text>
-            <Text style={styles.cardSubtitle}>
-              Log ud, hvis du ønsker at skifte bruger eller sikre din konto.
-            </Text>
-            <ErrorMessage message={logoutError} />
-            <Button title="Log ud" onPress={handleLogout} style={styles.logout} />
-          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -1807,3 +1788,4 @@ const LandingScreen = ({ navigation, route }) => {
 
 
 export default LandingScreen;
+

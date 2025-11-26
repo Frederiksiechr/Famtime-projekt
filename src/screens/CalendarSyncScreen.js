@@ -13,24 +13,20 @@ import ErrorMessage from '../components/ErrorMessage';
 import { auth, db, firebase } from '../lib/firebase';
 import styles from '../styles/screens/CalendarSyncScreenStyles';
 
+const formatCalendarLabel = (calendarTitle) => {
+  const trimmedTitle =
+    typeof calendarTitle === 'string' ? calendarTitle.trim() : '';
+  return trimmedTitle.length ? `"${trimmedTitle}"` : 'din kalender';
+};
+
 const CalendarSyncScreen = ({ navigation }) => {
   const [promptVisible, setPromptVisible] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
   const [processing, setProcessing] = useState(false);
   const [syncCompleted, setSyncCompleted] = useState(false);
-  const [syncStatus, setSyncStatus] = useState(null);
+  const [calendarLabel, setCalendarLabel] = useState('din kalender');
 
   const userId = auth.currentUser?.uid ?? null;
-  const subtitle = useMemo(() => {
-    return Platform.select({
-      ios: 'Forbind FamTime med din Apple-kalender for at dele aftaler med familien.',
-      android:
-        'Forbind FamTime med din kalender for at dele aftaler med familien.',
-      default:
-        'Forbind FamTime med din kalender for at dele aftaler med familien.',
-    });
-  }, []);
-
   const persistCalendarStatus = async (payload) => {
     // Gemmer den seneste synkroniseringsstatus i Firestore til senere opslag.
     if (!userId) {
@@ -117,11 +113,7 @@ const CalendarSyncScreen = ({ navigation }) => {
         // Hvis vi ikke kan gemme, fortsætter vi med visuel feedback til brugeren.
       }
 
-      setSyncStatus(
-        writableCalendar?.title
-          ? `Synkronisering aktiveret med kalenderen "${writableCalendar.title}".`
-          : 'Synkronisering aktiveret.'
-      );
+      setCalendarLabel(formatCalendarLabel(writableCalendar?.title));
       setSyncCompleted(true);
       setPromptVisible(false);
     } catch (_error) {
@@ -160,14 +152,38 @@ const CalendarSyncScreen = ({ navigation }) => {
     navigation.replace('FamilySetup');
   };
 
+  const heroContent = useMemo(() => {
+    if (syncCompleted) {
+      return {
+        title: 'Velkommen til FamTime',
+        subtitle: `Din kalender ${calendarLabel} er nu synkroniseret`,
+        paragraphs: [
+          `FamTime foreslår automatisk aktiviteter og tidspunkter, hvor hele familien kan deltage, baseret på de ledige huller i ${calendarLabel}.`,
+          'Vi holder øje med alles aftaler, giver besked når nye muligheder opstår og deler bekræftede events direkte i jeres kalendere, så alle er opdaterede.',
+          'Du er klar til at bruge FamTime – fortsæt til familien og lad appen gøre planlægningen lettere.',
+        ],
+      };
+    }
+    return {
+      title: 'Synkroniser FamTime med din kalender',
+      subtitle: 'Velkommen til FamTime',
+      paragraphs: [
+        'Giv FamTime adgang til din kalender for at få automatiske forslag til familietidspunkter og aktiviteter.',
+        'Når synkroniseringen er slået til, sørger vi for at holde familien opdateret helt automatisk.',
+      ],
+    };
+  }, [calendarLabel, syncCompleted]);
+
   return (
     <View style={styles.container}>
-      <Text style={styles.title}>Kalendersynkronisering</Text>
-      <Text style={styles.subtitle}>{subtitle}</Text>
-
+      <Text style={styles.title}>{heroContent.title}</Text>
+      <Text style={styles.subtitle}>{heroContent.subtitle}</Text>
+      {heroContent.paragraphs.map((copy) => (
+        <Text key={copy} style={styles.description}>
+          {copy}
+        </Text>
+      ))}
       <ErrorMessage message={errorMessage} />
-
-      {syncStatus ? <Text style={styles.statusText}>{syncStatus}</Text> : null}
 
       {!promptVisible ? (
         <>
