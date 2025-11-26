@@ -11,6 +11,7 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.xl,
+    paddingBottom: spacing.xxl + spacing.lg,
     backgroundColor: colors.canvas,
   },
   container: {
@@ -135,8 +136,9 @@ const styles = StyleSheet.create({
   },
   logoutButton: {
     marginTop: spacing.md,
-    backgroundColor: colors.error,
+    backgroundColor: colors.primary,
   },
 });
 
 export default styles;
+
