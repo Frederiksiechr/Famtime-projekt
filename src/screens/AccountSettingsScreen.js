@@ -28,13 +28,20 @@ const WEEK_DAY_LABELS = {
   sunday: 'Søndag',
 };
 
-const formatTimeWindows = (timeWindows = {}) => {
+const formatTimeWindows = (timeWindows = {}, preferredDays = []) => {
   if (!timeWindows || typeof timeWindows !== 'object') {
     return 'Ikke udfyldt';
   }
 
+  const preferredDaySet =
+    Array.isArray(preferredDays) && preferredDays.length
+      ? new Set(preferredDays)
+      : null;
   const summaries = [];
   Object.entries(WEEK_DAY_LABELS).forEach(([dayKey, label]) => {
+    if (preferredDaySet && !preferredDaySet.has(dayKey)) {
+      return;
+    }
     const entryList = Array.isArray(timeWindows[dayKey])
       ? timeWindows[dayKey]
       : [];
@@ -811,7 +818,10 @@ const AccountSettingsScreen = ({ navigation }) => {
     ? formatPreferredDays(userProfile?.preferredFamilyDays)
     : preferenceOverrideLabel;
   const preferredTimeWindowsLabel = shouldShowCustomPreferences
-    ? formatTimeWindows(userProfile?.preferredFamilyTimeWindows)
+    ? formatTimeWindows(
+        userProfile?.preferredFamilyTimeWindows,
+        userProfile?.preferredFamilyDays
+      )
     : preferenceOverrideLabel;
   const preferredDurationLabel = shouldShowCustomPreferences
     ? formatDurationRange(
@@ -823,6 +833,59 @@ const AccountSettingsScreen = ({ navigation }) => {
           : null
       )
     : preferenceOverrideLabel;
+  const preferenceSourceLabel = formatPreferenceSource(
+    userProfile,
+    family?.members || []
+  );
+  const profileNameLabel =
+    userProfile?.name && userProfile.name.trim().length
+      ? userProfile.name.trim()
+      : 'Ikke udfyldt';
+  const profileEmailLabel = userProfile?.email || userEmail || 'Ukendt';
+  const profileMeta = [
+    {
+      key: 'age',
+      label: 'Alder',
+      value: userProfile?.age ? String(userProfile.age) : 'Ikke udfyldt',
+    },
+    {
+      key: 'gender',
+      label: 'Køn',
+      value: userProfile?.gender || 'Ikke udfyldt',
+    },
+    {
+      key: 'location',
+      label: 'Lokation',
+      value: userProfile?.location || 'Ikke udfyldt',
+    },
+    {
+      key: 'role',
+      label: 'Familiestatus',
+      value: userProfile?.familyRole ? userProfile.familyRole : 'Medlem',
+    },
+  ];
+  const preferenceHighlights = [
+    {
+      key: 'days',
+      label: 'Foretrukne dage',
+      value: preferredDaysLabel,
+    },
+    {
+      key: 'times',
+      label: 'Foretrukket tidsrum',
+      value: preferredTimeWindowsLabel,
+    },
+    {
+      key: 'duration',
+      label: 'Varighedsgrænser',
+      value: preferredDurationLabel,
+    },
+    {
+      key: 'source',
+      label: 'Præferencekilde',
+      value: preferenceSourceLabel,
+    },
+  ];
 
   const shouldShowStatusCard =
     Boolean(error) || Boolean(actionError) || Boolean(statusMessage);
@@ -854,50 +917,50 @@ const AccountSettingsScreen = ({ navigation }) => {
           ) : null}
 
           <View style={styles.card}>
-          <Text style={styles.sectionTitle}>Dine oplysninger</Text>
-          {loading ? (
-            <Text style={styles.infoText}>Indlæser oplysninger...</Text>
-          ) : (
-            <>
-              <Text style={styles.fieldText}>Din emoji: {resolvedUserEmoji}</Text>
-              <Text style={styles.fieldText}>
-                Navn: {userProfile?.name || 'Ikke udfyldt'}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Dine oplysninger</Text>
+              <Text style={styles.sectionHint}>
+                Opdateres automatisk, når du redigerer din profil.
               </Text>
-              <Text style={styles.fieldText}>
-                E-mail: {userProfile?.email || 'Ukendt'}
-              </Text>
-              <Text style={styles.fieldText}>
-                Alder:{' '}
-                {userProfile?.age ? String(userProfile.age) : 'Ikke udfyldt'}
-              </Text>
-              <Text style={styles.fieldText}>
-                Køn: {userProfile?.gender || 'Ikke udfyldt'}
-              </Text>
-              <Text style={styles.fieldText}>
-                Lokation: {userProfile?.location || 'Ikke udfyldt'}
-              </Text>
-              <Text style={styles.fieldText}>
-                Foretrukne dage: {preferredDaysLabel}
-              </Text>
-              <Text style={styles.fieldText}>
-                Foretrukket tidsrum: {preferredTimeWindowsLabel}
-              </Text>
-              <Text style={styles.fieldText}>
-                Varighedsgrænser: {preferredDurationLabel}
-              </Text>
-              <Text style={styles.fieldText}>
-                Præferencekilde:{' '}
-                {formatPreferenceSource(userProfile, family?.members || [])}
-              </Text>
-            </>
-          )}
+            </View>
+            {loading ? (
+              <Text style={styles.infoText}>Indlæser oplysninger...</Text>
+            ) : (
+              <>
+                <View style={styles.profileSummary}>
+                  <View style={styles.profileEmojiBubble}>
+                    <Text style={styles.profileEmojiText}>{resolvedUserEmoji}</Text>
+                  </View>
+                  <View style={styles.profileSummaryText}>
+                    <Text style={styles.profileName}>{profileNameLabel}</Text>
+                    <Text style={styles.profileEmail}>{profileEmailLabel}</Text>
+                  </View>
+                </View>
+                <View style={styles.profileMetaGrid}>
+                  {profileMeta.map((item) => (
+                    <View key={item.key} style={styles.profileMetaCard}>
+                      <Text style={styles.infoLabel}>{item.label}</Text>
+                      <Text style={styles.infoValue}>{item.value}</Text>
+                    </View>
+                  ))}
+                </View>
+                <View style={styles.preferenceHighlightGrid}>
+                  {preferenceHighlights.map((item) => (
+                    <View key={item.key} style={styles.preferenceHighlightCard}>
+                      <Text style={styles.preferenceHighlightLabel}>{item.label}</Text>
+                      <Text style={styles.preferenceHighlightValue}>{item.value}</Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            )}
 
-          <Button
-            title="Opdater profil"
-            onPress={handleOpenProfile}
-            style={styles.actionButton}
-          />
-        </View>
+            <Button
+              title="Opdater profil"
+              onPress={handleOpenProfile}
+              style={styles.actionButton}
+            />
+          </View>
 
         <View style={styles.card}>
           <Text style={styles.sectionTitle}>Familieinvitationer</Text>

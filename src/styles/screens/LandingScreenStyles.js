@@ -353,6 +353,7 @@ const styles = StyleSheet.create({
   },
   dayAccordionSwitch: {
     marginLeft: spacing.sm,
+    transform: [{ scaleX: 0.85 }, { scaleY: 0.85 }],
   },
   dayAccordionBody: {
     padding: spacing.sm,
@@ -382,26 +383,6 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
     flex: 1,
     marginRight: spacing.sm,
-  },
-  addSlotButton: {
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.md,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.primary,
-    backgroundColor: colors.surface,
-  },
-  addSlotButtonDisabled: {
-    borderColor: colors.border,
-    opacity: 0.5,
-  },
-  addSlotButtonText: {
-    fontSize: fontSizes.xs,
-    fontWeight: '700',
-    color: colors.primaryDark,
-  },
-  addSlotButtonTextDisabled: {
-    color: colors.mutedText,
   },
   timeSlotCard: {
     borderWidth: 1,
@@ -448,6 +429,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.sm,
     marginBottom: spacing.xs,
     backgroundColor: colors.surface,
+  },
+  timePresetChipInner: {
+    width: '100%',
+  },
+  timePresetChipHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: spacing.xxs,
+  },
+  timePresetCheck: {
+    fontSize: fontSizes.sm,
+    fontWeight: '700',
+    color: colors.primaryDark,
+    marginLeft: spacing.xs,
   },
   timePresetChipSelected: {
     borderColor: colors.primary,

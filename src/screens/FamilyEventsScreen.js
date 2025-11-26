@@ -2209,7 +2209,7 @@ const initializeCalendarContext = useCallback(
             style={styles.detailsModalScrim}
             onPress={handleCloseMoodPreview}
             accessibilityRole="button"
-            accessibilityLabel="Luk humÃ¸rkortdetaljer"
+            accessibilityLabel="Luk humørkortdetaljer"
           />
           <View style={styles.detailsModalCard}>
             <Text style={styles.detailsModalTitle}>{moodPreview.label}</Text>
@@ -2287,7 +2287,7 @@ const initializeCalendarContext = useCallback(
                         <Text style={styles.sectionMeta}>{suggestionMetaText}</Text>
                       </View>
                       <Text style={styles.sectionHint}>
-                        VÃ¦lg en ledig dato og byg videre med humÃ¸rkortene.
+                        Vælg en ledig dato og byg videre med humørkortene.
                       </Text>
                     </View>
 
@@ -2354,9 +2354,9 @@ const initializeCalendarContext = useCallback(
 
                   <View style={styles.sectionCard}>
                     <View style={styles.sectionHeader}>
-                      <Text style={styles.sectionTitle}>HumÃ¸rkort</Text>
+                      <Text style={styles.sectionTitle}>Humørkort</Text>
                       <Text style={styles.sectionHint}>
-                        VÃ¦lg stemningen for aftalen. Tryk pÃ¥ Ã¸jet for at lÃ¦se mere.
+                        Vælg stemningen for aftalen. Tryk på øjet for at læse mere.
                       </Text>
                     </View>
                   </View>
@@ -2374,7 +2374,7 @@ const initializeCalendarContext = useCallback(
                           ]}
                           accessibilityRole="button"
                           accessibilityState={{ selected: isActiveMood }}
-                          accessibilityLabel={`HumÃ¸rkort ${mood.label}`}
+                          accessibilityLabel={`Humørkort ${mood.label}`}
                         >
                           <View style={styles.moodCardHeader}>
                             <View style={styles.moodCardHeaderText}>
@@ -2413,7 +2413,7 @@ const initializeCalendarContext = useCallback(
 
                   {activeMoodKey ? (
                     <View style={[styles.sectionCard, styles.moodEditorCard]}>
-                      <Text style={styles.moodEditorTitle}>Tilpas humÃ¸rkortet</Text>
+                      <Text style={styles.moodEditorTitle}>Tilpas humørkortet</Text>
                       <Text style={styles.moodEditorHint}>
                         Rediger titel og beskrivelse, eller generÃ©r en ny tekst baseret pÃ¥ humÃ¸ret.
                       </Text>
@@ -2457,7 +2457,7 @@ const initializeCalendarContext = useCallback(
                   ) : (
                     <View style={styles.sectionCard}>
                       <Text style={styles.moodHelper}>
-                        VÃ¦lg et humÃ¸rkort for at fortsÃ¦tte.
+                        Vælg et humørkort for at fortsætte.
                       </Text>
                     </View>
                   )}

@@ -16,7 +16,7 @@ const styles = StyleSheet.create({
   },
   container: {
     width: '100%',
-    maxWidth: 720,
+    maxWidth: 860,
     alignSelf: 'center',
     gap: spacing.lg,
   },
@@ -73,6 +73,13 @@ const styles = StyleSheet.create({
     color: colors.text,
     marginBottom: spacing.sm,
   },
+  sectionHeader: {
+    gap: spacing.xs,
+  },
+  sectionHint: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+  },
   sectionSubtitle: {
     fontSize: fontSizes.md,
     fontWeight: '600',
@@ -84,6 +91,103 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.md,
     color: colors.text,
     marginBottom: spacing.xs,
+  },
+  profileSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.surfaceMuted,
+    gap: spacing.md,
+  },
+  profileEmojiBubble: {
+    width: 72,
+    height: 72,
+    borderRadius: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 2,
+  },
+  profileEmojiText: {
+    fontSize: 34,
+  },
+  profileSummaryText: {
+    flex: 1,
+  },
+  profileName: {
+    fontSize: fontSizes.lg,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  profileEmail: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+    marginTop: spacing.xxs,
+  },
+  profileMetaGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  profileMetaCard: {
+    flexBasis: '48%',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    backgroundColor: colors.surface,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
+  },
+  infoLabel: {
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  infoValue: {
+    fontSize: fontSizes.md,
+    fontWeight: '600',
+    color: colors.text,
+    marginTop: spacing.xs,
+  },
+  preferenceHighlightGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  preferenceHighlightCard: {
+    flexBasis: '48%',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    backgroundColor: colors.surfaceMuted,
+  },
+  preferenceHighlightLabel: {
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  preferenceHighlightValue: {
+    fontSize: fontSizes.sm,
+    fontWeight: '600',
+    color: colors.text,
+    marginTop: spacing.xs,
   },
   memberText: {
     fontSize: fontSizes.md,
@@ -141,4 +245,3 @@ const styles = StyleSheet.create({
 });
 
 export default styles;
-

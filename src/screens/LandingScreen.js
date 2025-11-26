@@ -41,8 +41,8 @@ const WEEK_DAYS = [
   { key: 'wednesday', label: 'Onsdag' },
   { key: 'thursday', label: 'Torsdag' },
   { key: 'friday', label: 'Fredag' },
-  { key: 'saturday', label: 'LÃ¸rdag' },
-  { key: 'sunday', label: 'SÃ¸ndag' },
+  { key: 'saturday', label: 'Lørdag' },
+  { key: 'sunday', label: 'Søndag' },
 ];
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -103,10 +103,22 @@ const CUSTOM_TIME_PRESET = 'custom';
 const isIOS = Platform.OS === 'ios';
 const DEFAULT_CUSTOM_START = '17:00';
 const DEFAULT_CUSTOM_END = '19:00';
-const MAX_TIME_SLOTS_PER_DAY = 3;
 const QUICK_TIME_PRESETS = TIME_WINDOW_PRESETS.filter(
   (preset) => preset.key !== 'none'
 );
+const PRESET_LABEL_MAP = TIME_WINDOW_PRESETS.reduce((acc, preset) => {
+  if (preset.key !== 'none') {
+    acc[preset.key] = preset.label;
+  }
+  return acc;
+}, {});
+const PRESET_ORDER = TIME_WINDOW_PRESETS.reduce((acc, preset, index) => {
+  if (preset.key !== 'none') {
+    acc[preset.key] = index;
+  }
+  return acc;
+}, {});
+const DEFAULT_DAY_PRESET_KEY = 'evening';
 
 let slotIdCounter = 0;
 const createSlotId = () => {
@@ -148,6 +160,8 @@ const createSlot = ({ presetKey, start, end } = {}) => {
   return {
     id: createSlotId(),
     presetKey: normalizedPreset,
+    originalPresetKey:
+      normalizedPreset !== CUSTOM_TIME_PRESET ? normalizedPreset : null,
     start: typeof start === 'string' && start.length ? start : DEFAULT_CUSTOM_START,
     end: typeof end === 'string' && end.length ? end : DEFAULT_CUSTOM_END,
   };
@@ -156,6 +170,26 @@ const createSlot = ({ presetKey, start, end } = {}) => {
 const createEmptyDaySelection = () => ({
   slots: [],
 });
+
+const getPresetOrder = (presetKey) => {
+  if (!presetKey) {
+    return Infinity;
+  }
+  return PRESET_ORDER[presetKey] ?? Infinity;
+};
+
+const sortSlotsByPreset = (slots = []) => {
+  return [...slots].sort((slotA, slotB) => {
+    const orderA = getPresetOrder(slotA.originalPresetKey ?? slotA.presetKey);
+    const orderB = getPresetOrder(slotB.originalPresetKey ?? slotB.presetKey);
+    if (orderA !== orderB) {
+      return orderA - orderB;
+    }
+    const startA = typeof slotA.start === 'string' ? slotA.start : '';
+    const startB = typeof slotB.start === 'string' ? slotB.start : '';
+    return startA.localeCompare(startB);
+  });
+};
 
 const arraysEqual = (a = [], b = []) => {
   if (a.length !== b.length) {
@@ -293,7 +327,7 @@ const adjustDurationMinutesByPart = (currentMinutes, part, delta) => {
 const GENDER_OPTIONS = ['Kvinde', 'Mand', 'Andet'];
 const MIN_AGE = 5;
 const MAX_AGE = 100;
-const DANISH_CITY_OPTIONS = ['KÃ¸benhavn', 'Odense', 'Aalborg'];
+const DANISH_CITY_OPTIONS = ['København', 'Odense', 'Aalborg'];
 
 const toMinutes = (value) => {
   if (typeof value !== 'string') {
@@ -448,11 +482,16 @@ const readWindowEntry = (raw) => {
 const hydrateDayTimeSelections = (
   timeWindows = {},
   fallbackStart = '',
-  fallbackEnd = ''
+  fallbackEnd = '',
+  preferredDayKeys = null
 ) => {
   const selections = createInitialDayTimeSelections();
   const fallbackWindow = isValidTimeRange(fallbackStart, fallbackEnd)
     ? { start: fallbackStart, end: fallbackEnd }
+    : null;
+  const hasPreferredDayConstraint = Array.isArray(preferredDayKeys);
+  const preferredDaySet = hasPreferredDayConstraint
+    ? new Set(preferredDayKeys)
     : null;
 
   const readWindowEntries = (list) => {
@@ -479,17 +518,48 @@ const hydrateDayTimeSelections = (
 
   WEEK_DAYS.forEach(({ key }) => {
     const entries = readWindowEntries(timeWindows?.[key]);
-    const sourceEntries = entries.length ? entries : defaultEntries;
-    if (sourceEntries.length) {
+    if (entries.length) {
+      const allowExplicit =
+        !hasPreferredDayConstraint || preferredDaySet?.has(key);
+      if (!allowExplicit) {
+        return;
+      }
       selections[key] = {
-        slots: sourceEntries.map((entry) => ({
+        slots: entries.map((entry) => {
+          const presetKey = findPresetForWindow(entry.start, entry.end);
+          return {
+            id: createSlotId(),
+            presetKey,
+            originalPresetKey:
+              presetKey !== CUSTOM_TIME_PRESET ? presetKey : null,
+            start: entry.start,
+            end: entry.end,
+          };
+        }),
+      };
+      return;
+    }
+    if (!defaultEntries.length) {
+      return;
+    }
+    const allowDefault =
+      !hasPreferredDayConstraint || preferredDaySet.has(key);
+    if (!allowDefault) {
+      return;
+    }
+    selections[key] = {
+      slots: defaultEntries.map((entry) => {
+        const presetKey = findPresetForWindow(entry.start, entry.end);
+        return {
           id: createSlotId(),
-          presetKey: findPresetForWindow(entry.start, entry.end),
+          presetKey,
+          originalPresetKey:
+            presetKey !== CUSTOM_TIME_PRESET ? presetKey : null,
           start: entry.start,
           end: entry.end,
-        })),
-      };
-    }
+        };
+      }),
+    };
   });
 
   return selections;
@@ -659,6 +729,27 @@ const LandingScreen = ({ navigation, route }) => {
             return;
           }
 
+          const hasPreferredDaysField = Object.prototype.hasOwnProperty.call(
+            data,
+            'preferredFamilyDays'
+          );
+          const preferredDayCandidatesFromWindows = Object.keys(
+            data.preferredFamilyTimeWindows ?? {}
+          )
+            .filter((key) => key !== 'default')
+            .filter((dayKey) =>
+              WEEK_DAYS.some((day) => day.key === dayKey)
+            );
+          const normalizedPreferredDays = hasPreferredDaysField
+            ? Array.isArray(data.preferredFamilyDays)
+              ? data.preferredFamilyDays.filter((dayKey) =>
+                  WEEK_DAYS.some((day) => day.key === dayKey)
+                )
+              : []
+            : preferredDayCandidatesFromWindows.length
+              ? preferredDayCandidatesFromWindows
+              : [];
+
           setProfile({
             name: data.name ?? '',
             age:
@@ -670,9 +761,7 @@ const LandingScreen = ({ navigation, route }) => {
               typeof data.location === 'string' ? data.location.trim() : '',
             familyId: data.familyId ?? '',
             familyRole: data.familyRole ?? '',
-            preferredDays: Array.isArray(data.preferredFamilyDays)
-              ? data.preferredFamilyDays
-              : [],
+            preferredDays: normalizedPreferredDays,
             preferredMinDuration: minDurationMinutes,
             preferredMaxDuration: maxDurationMinutes,
             avatarEmoji:
@@ -691,7 +780,12 @@ const LandingScreen = ({ navigation, route }) => {
             hydrateDayTimeSelections(
               data.preferredFamilyTimeWindows,
               primaryTimeWindow.start,
-              primaryTimeWindow.end
+              primaryTimeWindow.end,
+              hasPreferredDaysField
+                ? normalizedPreferredDays
+                : preferredDayCandidatesFromWindows.length
+                  ? preferredDayCandidatesFromWindows
+                  : null
             )
           );
         }
@@ -800,33 +894,6 @@ const LandingScreen = ({ navigation, route }) => {
     setProfile((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleAddTimeSlot = useCallback(
-    (dayKey) => {
-      clearTimeWindowError();
-      setDayTimeSelections((prev) => {
-        const current = prev[dayKey] ?? createEmptyDaySelection();
-        if (current.slots.length >= MAX_TIME_SLOTS_PER_DAY) {
-          return prev;
-        }
-        const nextSlot =
-          current.slots.length === 0
-            ? createSlot()
-            : createSlot({
-                start: current.slots[current.slots.length - 1].start,
-                end: current.slots[current.slots.length - 1].end,
-                presetKey: current.slots[current.slots.length - 1].presetKey,
-              });
-        return {
-          ...prev,
-          [dayKey]: {
-            slots: [...current.slots, nextSlot],
-          },
-        };
-      });
-    },
-    [clearTimeWindowError]
-  );
-
   const handleRemoveTimeSlot = useCallback(
     (dayKey, slotId) => {
       clearTimeWindowError();
@@ -855,9 +922,20 @@ const LandingScreen = ({ navigation, route }) => {
 
   const getDaySelectionSummary = useCallback(
     (dayKey) => {
-      const slots = dayTimeSelections[dayKey]?.slots ?? [];
+      const slots = sortSlotsByPreset(dayTimeSelections[dayKey]?.slots ?? []);
       if (!slots.length) {
         return 'Ingen tidsrum';
+      }
+      const presetSummaries = slots
+        .map((slot) => PRESET_LABEL_MAP[slot.originalPresetKey] ?? null)
+        .filter(Boolean);
+      if (presetSummaries.length === 1) {
+        return presetSummaries[0];
+      }
+      if (presetSummaries.length > 1) {
+        const preview = presetSummaries.slice(0, 2).join(', ');
+        const remaining = presetSummaries.length - 2;
+        return remaining > 0 ? `${preview} +${remaining}` : preview;
       }
       const validSlots = slots.filter((slot) =>
         isValidTimeRange(slot.start, slot.end)
@@ -896,8 +974,12 @@ const LandingScreen = ({ navigation, route }) => {
     });
   }, []);
 
-  const handleDayPresetSelect = useCallback(
-    (dayKey, slotId, presetKey) => {
+  const toggleDayExpansion = useCallback((dayKey) => {
+    setExpandedDayKey((prev) => (prev === dayKey ? null : dayKey));
+  }, []);
+
+  const handleTogglePresetSlot = useCallback(
+    (dayKey, presetKey) => {
       const preset = TIME_WINDOW_PRESETS.find((item) => item.key === presetKey);
       if (!preset || !preset.start || !preset.end) {
         return;
@@ -905,62 +987,80 @@ const LandingScreen = ({ navigation, route }) => {
       clearTimeWindowError();
       setDayTimeSelections((prev) => {
         const current = prev[dayKey] ?? createEmptyDaySelection();
-        const nextSlots = current.slots.map((slot) => {
-          if (slot.id !== slotId) {
-            return slot;
+        const existingSlot = current.slots.find(
+          (slot) => slot.originalPresetKey === presetKey
+        );
+        if (existingSlot) {
+          if (
+            timePickerState.dayKey === dayKey &&
+            timePickerState.slotId === existingSlot.id
+          ) {
+            handleCloseTimePicker();
           }
+          const nextSlots = current.slots.filter(
+            (slot) => slot.id !== existingSlot.id
+          );
           return {
-            ...slot,
-            presetKey: preset.key,
-            start: preset.start,
-            end: preset.end,
+            ...prev,
+            [dayKey]: {
+              slots: nextSlots,
+            },
           };
+        }
+        const nextSlot = createSlot({
+          presetKey: preset.key,
+          start: preset.start,
+          end: preset.end,
         });
         return {
           ...prev,
           [dayKey]: {
-            slots: nextSlots,
+            slots: [...current.slots, nextSlot],
           },
         };
       });
-      if (
-        timePickerState.dayKey === dayKey &&
-        timePickerState.slotId === slotId &&
-        preset.key !== CUSTOM_TIME_PRESET
-      ) {
-        setTimePickerState((prev) => ({
-          ...prev,
-          visible: false,
-          dayKey: null,
-          slotId: null,
-          field: null,
-        }));
-      }
+      setExpandedDayKey(dayKey);
     },
-    [clearTimeWindowError, timePickerState.dayKey, timePickerState.slotId]
+    [
+      clearTimeWindowError,
+      handleCloseTimePicker,
+      timePickerState.dayKey,
+      timePickerState.slotId,
+    ]
   );
-
-  const toggleDayExpansion = useCallback((dayKey) => {
-    setExpandedDayKey((prev) => (prev === dayKey ? null : dayKey));
-  }, []);
 
   const handleToggleDayActive = useCallback(
     (dayKey, nextActive) => {
       clearTimeWindowError();
       if (nextActive) {
+        const defaultPreset =
+          TIME_WINDOW_PRESETS.find(
+            (preset) => preset.key === DEFAULT_DAY_PRESET_KEY
+          ) ??
+          TIME_WINDOW_PRESETS.find(
+            (preset) => preset.key !== 'none' && preset.start && preset.end
+          );
+        if (defaultPreset) {
+          setDayTimeSelections((prev) => {
+            const current = prev[dayKey] ?? createEmptyDaySelection();
+            if (current.slots.length) {
+              return prev;
+            }
+            return {
+              ...prev,
+              [dayKey]: {
+                slots: [
+                  createSlot({
+                    presetKey: defaultPreset.key,
+                    start: defaultPreset.start,
+                    end: defaultPreset.end,
+                  }),
+                ],
+              },
+            };
+          });
+        }
         setExpandedDayKey(dayKey);
-        setDayTimeSelections((prev) => {
-          const current = prev[dayKey] ?? createEmptyDaySelection();
-          if (current.slots.length) {
-            return prev;
-          }
-          return {
-            ...prev,
-            [dayKey]: {
-              slots: [createSlot()],
-            },
-          };
-        });
         return;
       }
       if (timePickerState.dayKey === dayKey) {
@@ -1460,10 +1560,10 @@ const LandingScreen = ({ navigation, route }) => {
           payload.location = firebase.firestore.FieldValue.delete();
         }
 
-        if (Array.isArray(profile.preferredDays) && profile.preferredDays.length) {
+        if (Array.isArray(profile.preferredDays)) {
           payload.preferredFamilyDays = profile.preferredDays;
         } else {
-          payload.preferredFamilyDays = firebase.firestore.FieldValue.delete();
+          payload.preferredFamilyDays = [];
         }
 
         const minDurationRaw = typeof profile.preferredMinDuration === 'string' ? profile.preferredMinDuration.trim() : '';
@@ -1608,10 +1708,11 @@ const LandingScreen = ({ navigation, route }) => {
             </Text>
             <Text style={styles.sectionIntro}>
               {isEditMode
-                ? 'RedigÃ©r dine profiloplysninger og familieprÃ¦ferencer.'
-                : 'FortÃ¦l os lidt om dig selv, sÃ¥ familien kan lÃ¦re dig bedre at kende.'}
+                ? 'Rediger dine profiloplysninger og familiepræferencer.'
+                : 'Fortæl os lidt om dig selv, så familien kan lære dig bedre at kende.'}
             </Text>
           </View>
+
 
           <View style={styles.card}>
             <Text style={styles.cardTitle}>Personlige oplysninger</Text>
@@ -1633,7 +1734,7 @@ const LandingScreen = ({ navigation, route }) => {
               ) : (
                 <>
                   <View style={styles.emojiSection}>
-                    <Text style={styles.emojiLabel}>VÃ¦lg din emoji</Text>
+                    <Text style={styles.emojiLabel}>Vælg din emoji</Text>
                     <Text style={styles.emojiHint}>
                       Din emoji bruges i familiens kalender og lister.
                     </Text>
@@ -1871,10 +1972,9 @@ const LandingScreen = ({ navigation, route }) => {
                     <View style={styles.dayTimeList}>
                       {WEEK_DAYS.map((day) => {
                         const daySelection = dayTimeSelections[day.key] ?? createEmptyDaySelection();
-                        const slots = daySelection.slots ?? [];
+                        const slots = sortSlotsByPreset(daySelection.slots ?? []);
                         const hasSlots = slots.length > 0;
                         const summary = getDaySelectionSummary(day.key);
-                        const addDisabled = slots.length >= MAX_TIME_SLOTS_PER_DAY;
                         const isExpanded = expandedDayKey === day.key;
 
                         return (
@@ -1903,11 +2003,11 @@ const LandingScreen = ({ navigation, route }) => {
                                 }
                                 style={styles.dayAccordionSwitch}
                                 trackColor={{
-                                  false: colors.border,
-                                  true: 'rgba(230, 138, 46, 0.45)',
+                                  false: 'rgba(0, 0, 0, 0.1)',
+                                  true: 'rgba(230, 138, 46, 0.25)',
                                 }}
                                 thumbColor={
-                                  hasSlots ? colors.primaryDark : colors.surface
+                                  hasSlots ? colors.primary : colors.surface
                                 }
                                 ios_backgroundColor={colors.border}
                               />
@@ -1916,76 +2016,73 @@ const LandingScreen = ({ navigation, route }) => {
                               <View style={styles.dayAccordionBody}>
                                 <View style={styles.dayAccordionBodyHeader}>
                                   <Text style={styles.dayToggleHint}>
-                                    Vælg et hurtigvalg eller justér tiden via start/slut.
+                                    Vælg et eller flere hurtigvalg herunder – de nye tidsrum vises som kort, hvor du kan finjustere tiderne.
                                   </Text>
-                                  <Pressable
-                                    onPress={() => handleAddTimeSlot(day.key)}
-                                    disabled={addDisabled}
-                                    style={[
-                                      styles.addSlotButton,
-                                      addDisabled ? styles.addSlotButtonDisabled : null,
-                                    ]}
-                                  >
-                                    <Text
-                                      style={[
-                                        styles.addSlotButtonText,
-                                        addDisabled ? styles.addSlotButtonTextDisabled : null,
-                                      ]}
-                                    >
-                                      Tilføj tidsrum
-                                    </Text>
-                                  </Pressable>
+                                </View>
+                                <View style={styles.timePresetWrap}>
+                                  {QUICK_TIME_PRESETS.map((preset) => {
+                                    const presetSelected = slots.some(
+                                      (slot) => slot.originalPresetKey === preset.key
+                                    );
+                                    return (
+                                      <Pressable
+                                        key={`${day.key}-${preset.key}`}
+                                        onPress={() =>
+                                          handleTogglePresetSlot(day.key, preset.key)
+                                        }
+                                        style={[
+                                          styles.timePresetChip,
+                                          presetSelected ? styles.timePresetChipSelected : null,
+                                        ]}
+                                        accessibilityRole="switch"
+                                        accessibilityState={{ checked: presetSelected }}
+                                      >
+                                        <View style={styles.timePresetChipInner}>
+                                          <View style={styles.timePresetChipHeader}>
+                                            <Text
+                                              style={[
+                                                styles.timePresetLabel,
+                                                presetSelected
+                                                  ? styles.timePresetLabelSelected
+                                                  : null,
+                                              ]}
+                                            >
+                                              {preset.label}
+                                            </Text>
+                                            {presetSelected ? (
+                                              <Text style={styles.timePresetCheck}>✓</Text>
+                                            ) : null}
+                                          </View>
+                                          <Text
+                                            style={[
+                                              styles.timePresetRange,
+                                              presetSelected
+                                                ? styles.timePresetRangeSelected
+                                                : null,
+                                            ]}
+                                          >
+                                            {preset.display}
+                                          </Text>
+                                        </View>
+                                      </Pressable>
+                                    );
+                                  })}
                                 </View>
                                 {hasSlots ? (
                                   slots.map((slot, index) => (
                                     <View key={slot.id} style={styles.timeSlotCard}>
                                       <View style={styles.timeSlotHeader}>
-                                        <Text style={styles.timeSlotLabel}>{`Tidsrum ${index + 1}`}</Text>
+                                        <Text style={styles.timeSlotLabel}>
+                                          {slot.originalPresetKey &&
+                                          PRESET_LABEL_MAP[slot.originalPresetKey]
+                                            ? PRESET_LABEL_MAP[slot.originalPresetKey]
+                                            : `Tidsrum ${index + 1}`}
+                                        </Text>
                                         <Pressable
                                           onPress={() => handleRemoveTimeSlot(day.key, slot.id)}
                                         >
                                           <Text style={styles.timeSlotRemove}>Fjern</Text>
                                         </Pressable>
-                                      </View>
-                                      <View style={styles.timePresetWrap}>
-                                        {QUICK_TIME_PRESETS.map((preset) => {
-                                          const selected = slot.presetKey === preset.key;
-                                          return (
-                                            <Pressable
-                                              key={`${slot.id}-${preset.key}`}
-                                              onPress={() =>
-                                                handleDayPresetSelect(day.key, slot.id, preset.key)
-                                              }
-                                              style={[
-                                                styles.timePresetChip,
-                                                selected ? styles.timePresetChipSelected : null,
-                                              ]}
-                                              accessibilityRole="button"
-                                              accessibilityLabel={`Vælg ${preset.label} for ${day.label}`}
-                                            >
-                                              <Text
-                                                style={[
-                                                  styles.timePresetLabel,
-                                                  selected
-                                                    ? styles.timePresetLabelSelected
-                                                    : null,
-                                                ]}
-                                              >
-                                                {preset.label}
-                                              </Text>
-                                              <Text
-                                                style={[
-                                                  styles.timePresetRange,
-                                                  selected
-                                                    ? styles.timePresetRangeSelected
-                                                    : null,
-                                                ]}
-                                              >
-                                                {preset.display}
-                                              </Text>
-                                            </Pressable>
-                                          );
-                                        })}
                                       </View>
                                       <View style={styles.timeSelectionRow}>
                                         <Pressable
@@ -2040,7 +2137,7 @@ const LandingScreen = ({ navigation, route }) => {
                                   ))
                                 ) : (
                                   <Text style={styles.dayEmptyHint}>
-                                    Ingen tidsrum for {day.label.toLowerCase()} endnu. Tryk &quot;Tilføj tidsrum&quot; for at vælge et tidspunkt.
+                                    Ingen tidsrum for {day.label.toLocaleLowerCase('da-DK')} endnu. Vælg et interval ovenfor for at komme i gang.
                                   </Text>
                                 )}
                               </View>
@@ -2361,7 +2458,7 @@ const LandingScreen = ({ navigation, route }) => {
             <View style={[styles.card, styles.familyCard]}>
               <Text style={styles.cardTitle}>Din familie</Text>
               <Text style={styles.cardSubtitle}>
-                F hurtig adgang til delte oplysninger og del familie ID med andre.
+                Få hurtig adgang til delte oplysninger og del familie ID med andre.
               </Text>
 
               <Text style={styles.familyInfoText}>
@@ -2392,4 +2489,3 @@ const LandingScreen = ({ navigation, route }) => {
 
 
 export default LandingScreen;
-
