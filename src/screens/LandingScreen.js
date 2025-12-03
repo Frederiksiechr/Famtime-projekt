@@ -1,7 +1,7 @@
-ï»¿/**
+/**
  * LandingScreen
  *
- * - Beskyttet skÃƒÂ¦rm der vises efter login og samler brugerinformation.
+ * - Beskyttet skærm der vises efter login og samler brugerinformation.
  * - Formularen gemmer profiloplysninger i Firestore.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
@@ -41,8 +41,8 @@ const WEEK_DAYS = [
   { key: 'wednesday', label: 'Onsdag' },
   { key: 'thursday', label: 'Torsdag' },
   { key: 'friday', label: 'Fredag' },
-  { key: 'saturday', label: 'LÃ¸rdag' },
-  { key: 'sunday', label: 'SÃ¸ndag' },
+  { key: 'saturday', label: 'Lørdag' },
+  { key: 'sunday', label: 'Søndag' },
 ];
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
@@ -202,43 +202,7 @@ const arraysEqual = (a = [], b = []) => {
   }
   return true;
 };
-const MIN_DURATION_PRESETS = [
-  { label: '30 min', minutes: 30 },
-  { label: '45 min', minutes: 45 },
-  { label: '1 time', minutes: 60 },
-  { label: '1,5 time', minutes: 90 },
-  { label: '2 timer', minutes: 120 },
-  { label: '3 timer', minutes: 180 },
-];
-const MAX_DURATION_PRESETS = [
-  { label: '45 min', minutes: 45 },
-  { label: '1 time', minutes: 60 },
-  { label: '2 timer', minutes: 120 },
-  { label: '3 timer', minutes: 180 },
-  { label: '5+ timer', minutes: 300 },
-];
-const CUSTOM_DURATION_MINUTE_CHOICES = [0, 15, 30, 45];
-const CUSTOM_DURATION_MIN = 0;
 const CUSTOM_DURATION_MAX = 5 * 60;
-
-const formatDurationMinutesLabel = (minutes) => {
-  if (!Number.isFinite(minutes) || minutes <= 0) {
-    return 'Ikke valgt';
-  }
-  const hours = Math.floor(minutes / 60);
-  const remainder = minutes % 60;
-  const parts = [];
-  if (hours > 0) {
-    parts.push(hours === 1 ? '1 time' : `${hours} timer`);
-  }
-  if (remainder > 0) {
-    parts.push(`${remainder} min`);
-  }
-  if (!parts.length) {
-    parts.push('0 min');
-  }
-  return parts.join(' ');
-};
 
 const buildTimeWindowPayload = (selections) => {
   const payload = {};
@@ -263,71 +227,10 @@ const buildTimeWindowPayload = (selections) => {
   return Object.keys(payload).length ? payload : null;
 };
 
-const clampCustomDurationMinutes = (minutes) => {
-  if (!Number.isFinite(minutes)) {
-    return 0;
-  }
-  if (minutes <= CUSTOM_DURATION_MIN) {
-    return 0;
-  }
-  return Math.max(
-    0,
-    Math.min(CUSTOM_DURATION_MAX, Math.round(minutes))
-  );
-};
-
-const splitDurationMinutes = (minutes) => {
-  if (!Number.isFinite(minutes) || minutes <= 0) {
-    return { hours: 0, minutes: 0 };
-  }
-  const totalHours = Math.floor(minutes / 60);
-  const remainder = minutes % 60;
-  const closestStep = CUSTOM_DURATION_MINUTE_CHOICES.reduce(
-    (closest, step) =>
-      Math.abs(step - remainder) < Math.abs(closest - remainder)
-        ? step
-        : closest,
-    CUSTOM_DURATION_MINUTE_CHOICES[0]
-  );
-  return { hours: totalHours, minutes: closestStep };
-};
-
-const adjustDurationMinutesByPart = (currentMinutes, part, delta) => {
-  const normalizedCurrent = Number.isFinite(currentMinutes)
-    ? currentMinutes
-    : 0;
-  const { hours, minutes } = splitDurationMinutes(normalizedCurrent);
-  let nextHours = hours;
-  let nextMinutes = minutes;
-
-  if (part === 'hour') {
-    nextHours = Math.max(0, nextHours + delta);
-  } else {
-    const currentIndex = Math.max(
-      0,
-      CUSTOM_DURATION_MINUTE_CHOICES.indexOf(nextMinutes)
-    );
-    let nextIndex = currentIndex + delta;
-    if (nextIndex < 0) {
-      if (nextHours === 0) {
-        nextIndex = 0;
-      } else {
-        nextHours = Math.max(0, nextHours - 1);
-        nextIndex = CUSTOM_DURATION_MINUTE_CHOICES.length - 1;
-      }
-    } else if (nextIndex >= CUSTOM_DURATION_MINUTE_CHOICES.length) {
-      nextHours += 1;
-      nextIndex = 0;
-    }
-    nextMinutes = CUSTOM_DURATION_MINUTE_CHOICES[nextIndex];
-  }
-
-  return clampCustomDurationMinutes(nextHours * 60 + nextMinutes);
-};
 const GENDER_OPTIONS = ['Kvinde', 'Mand', 'Andet'];
 const MIN_AGE = 5;
 const MAX_AGE = 100;
-const DANISH_CITY_OPTIONS = ['KÃ¸benhavn', 'Odense', 'Aalborg'];
+const DANISH_CITY_OPTIONS = ['København', 'Odense', 'Aalborg'];
 
 const toMinutes = (value) => {
   if (typeof value !== 'string') {
@@ -372,7 +275,7 @@ const formatTimeSelectionDisplay = (value) => {
   if (isValidTimeValue(value)) {
     return value;
   }
-  return 'VÃƒÂ¦lg tidspunkt';
+  return 'Vælg tidspunkt';
 };
 
 const extractPrimaryTimeWindow = (timeWindows = {}) => {
@@ -672,14 +575,6 @@ const LandingScreen = ({ navigation, route }) => {
     const value = Number(profile.preferredMaxDuration);
     return Number.isFinite(value) && value > 0 ? value : 0;
   }, [profile.preferredMaxDuration]);
-  const minDurationParts = useMemo(
-    () => splitDurationMinutes(minDurationMinutes),
-    [minDurationMinutes]
-  );
-  const maxDurationParts = useMemo(
-    () => splitDurationMinutes(maxDurationMinutes),
-    [maxDurationMinutes]
-  );
   const [durationSliderMin, durationSliderMax] = useMemo(() => {
     const fallbackMin = 60;
     const fallbackMax = 120;
@@ -963,17 +858,6 @@ const LandingScreen = ({ navigation, route }) => {
     });
   }, []);
 
-  const clearDurationError = useCallback((field) => {
-    setFieldErrors((prev) => {
-      if (!prev[field]) {
-        return prev;
-      }
-      const next = { ...prev };
-      delete next[field];
-      return next;
-    });
-  }, []);
-
   const toggleDayExpansion = useCallback((dayKey) => {
     setExpandedDayKey((prev) => (prev === dayKey ? null : dayKey));
   }, []);
@@ -1007,6 +891,10 @@ const LandingScreen = ({ navigation, route }) => {
             },
           };
         }
+        const filteredSlots =
+          presetKey === 'allday'
+            ? []
+            : current.slots.filter((slot) => slot.originalPresetKey !== 'allday');
         const nextSlot = createSlot({
           presetKey: preset.key,
           start: preset.start,
@@ -1015,7 +903,7 @@ const LandingScreen = ({ navigation, route }) => {
         return {
           ...prev,
           [dayKey]: {
-            slots: [...current.slots, nextSlot],
+            slots: [...filteredSlots, nextSlot],
           },
         };
       });
@@ -1215,55 +1103,6 @@ const LandingScreen = ({ navigation, route }) => {
     });
   }, []);
 
-  const handleSelectDuration = useCallback(
-    (field, minutes) => {
-      if (!Number.isFinite(minutes)) {
-        return;
-      }
-      clearDurationError(field);
-      setProfile((prev) => ({
-        ...prev,
-        [field]: String(minutes),
-      }));
-    },
-    [clearDurationError]
-  );
-
-  const handleClearDuration = useCallback(
-    (field) => {
-      clearDurationError(field);
-      setProfile((prev) => ({
-        ...prev,
-        [field]: '',
-      }));
-    },
-    [clearDurationError]
-  );
-
-  const handleDurationStepperChange = useCallback(
-    (field, part, delta) => {
-      clearDurationError(field);
-      setProfile((prev) => {
-        const currentValue = Number(prev[field]);
-        const currentMinutes =
-          Number.isFinite(currentValue) && currentValue > 0
-            ? currentValue
-            : 0;
-        const nextMinutes = adjustDurationMinutesByPart(
-          currentMinutes,
-          part,
-          delta
-        );
-        const nextValue = nextMinutes > 0 ? String(nextMinutes) : '';
-        return {
-          ...prev,
-          [field]: nextValue,
-        };
-      });
-    },
-    [clearDurationError]
-  );
-
   const handleSelectAvatar = (emoji) => {
     if (typeof emoji !== 'string') {
       return;
@@ -1376,12 +1215,6 @@ const LandingScreen = ({ navigation, route }) => {
           if (next.timeWindows) {
             delete next.timeWindows;
           }
-          if (next.preferredMinDuration) {
-            delete next.preferredMinDuration;
-          }
-          if (next.preferredMaxDuration) {
-            delete next.preferredMaxDuration;
-          }
         }
         return next;
       });
@@ -1407,18 +1240,13 @@ const LandingScreen = ({ navigation, route }) => {
     });
   }, []);
 
-  const handleDurationSliderChange = useCallback(
-    (minMinutesValue, maxMinutesValue) => {
-      clearDurationError('preferredMinDuration');
-      clearDurationError('preferredMaxDuration');
-      setProfile((prev) => ({
-        ...prev,
-        preferredMinDuration: String(minMinutesValue),
-        preferredMaxDuration: String(maxMinutesValue),
-      }));
-    },
-    [clearDurationError]
-  );
+  const handleDurationSliderChange = useCallback((minMinutesValue, maxMinutesValue) => {
+    setProfile((prev) => ({
+      ...prev,
+      preferredMinDuration: String(minMinutesValue),
+      preferredMaxDuration: String(maxMinutesValue),
+    }));
+  }, []);
 
   const validateProfile = () => {
     const nextErrors = {};
@@ -1430,16 +1258,16 @@ const LandingScreen = ({ navigation, route }) => {
     if (!trimmedAge) {
       nextErrors.age = 'Alder skal udfyldes.';
     } else if (!/^\d+$/.test(trimmedAge)) {
-      nextErrors.age = 'Alder skal vÃƒÂ¦re et tal.';
+      nextErrors.age = 'Alder skal være et tal.';
     } else {
       const numericAge = Number(trimmedAge);
       if (numericAge < MIN_AGE || numericAge > MAX_AGE) {
-        nextErrors.age = `Alder skal vÃƒÂ¦re mellem ${MIN_AGE} og ${MAX_AGE}.`;
+        nextErrors.age = `Alder skal være mellem ${MIN_AGE} og ${MAX_AGE}.`;
       }
     }
 
     if (!profile.gender.trim()) {
-      nextErrors.gender = 'KÃƒÂ¸n skal udfyldes.';
+      nextErrors.gender = 'Køn skal udfyldes.';
     }
 
     if (isFollowPreferenceMode) {
@@ -1448,7 +1276,7 @@ const LandingScreen = ({ navigation, route }) => {
           ? profile.familyPreferenceFollowUserId.trim()
           : '';
       if (!followUserId) {
-        nextErrors.preferenceMode = 'VÃ¦lg hvem du vil fÃ¸lge.';
+        nextErrors.preferenceMode = 'Vælg hvem du vil følge.';
       }
     }
 
@@ -1462,7 +1290,7 @@ const LandingScreen = ({ navigation, route }) => {
           const endValue =
             typeof slot.end === 'string' ? slot.end.trim() : '';
           if (!startValue || !endValue) {
-            nextErrors.timeWindows = `Angiv bÃ¥de start og slut for ${day.label}${
+            nextErrors.timeWindows = `Angiv både start og slut for ${day.label}${
               slots.length > 1 ? ` (tidsrum ${index + 1})` : ''
             }.`;
             break outer;
@@ -1474,44 +1302,12 @@ const LandingScreen = ({ navigation, route }) => {
             break outer;
           }
           if (!isValidTimeRange(startValue, endValue)) {
-            nextErrors.timeWindows = `Sluttid skal vÃ¦re efter starttid for ${day.label}${
+            nextErrors.timeWindows = `Sluttid skal være efter starttid for ${day.label}${
               slots.length > 1 ? ` (tidsrum ${index + 1})` : ''
             }.`;
             break outer;
           }
         }
-      }
-    }
-
-    if (isCustomPreferenceMode) {
-      const minDurationRaw =
-        typeof profile.preferredMinDuration === 'string'
-          ? profile.preferredMinDuration.trim()
-          : '';
-      const maxDurationRaw =
-        typeof profile.preferredMaxDuration === 'string'
-          ? profile.preferredMaxDuration.trim()
-          : '';
-      const minDurationValue = minDurationRaw ? Number(minDurationRaw) : null;
-      const maxDurationValue = maxDurationRaw ? Number(maxDurationRaw) : null;
-
-      if (minDurationRaw && (!Number.isFinite(minDurationValue) || minDurationValue <= 0)) {
-        nextErrors.preferredMinDuration =
-          'Kortest familietid skal vÃ¦re et positivt tal (minutter).';
-      }
-
-      if (maxDurationRaw && (!Number.isFinite(maxDurationValue) || maxDurationValue <= 0)) {
-        nextErrors.preferredMaxDuration =
-          'LÃ¦ngst familietid skal vÃ¦re et positivt tal (minutter).';
-      }
-
-      if (
-        Number.isFinite(minDurationValue) &&
-        Number.isFinite(maxDurationValue) &&
-        maxDurationValue < minDurationValue
-      ) {
-        nextErrors.preferredMaxDuration =
-          'LÃ¦ngst familietid skal vÃ¦re stÃ¸rre end kortest familietid.';
       }
     }
 
@@ -1521,7 +1317,7 @@ const LandingScreen = ({ navigation, route }) => {
 
   const handleSaveProfile = async () => {
     if (!userId) {
-      setGeneralError('Ingen bruger fundet. PrÃƒÂ¸v at logge ind igen.');
+      setGeneralError('Ingen bruger fundet. Prøv at logge ind igen.');
       return;
     }
 
@@ -1662,7 +1458,7 @@ const LandingScreen = ({ navigation, route }) => {
           } catch (_emojiError) {
             emojiSyncFailed = true;
             setGeneralError(
-              'Profilen er gemt, men emoji kunne ikke opdateres for familien. PrÃƒÂ¸v igen.'
+              'Profilen er gemt, men emoji kunne ikke opdateres for familien. Prøv igen.'
             );
           }
         }
@@ -1681,7 +1477,7 @@ const LandingScreen = ({ navigation, route }) => {
         navigation.navigate('CalendarSync');
       }
     } catch (_error) {
-      setGeneralError('Kunne ikke gemme dine oplysninger. PrÃƒÂ¸v igen.');
+      setGeneralError('Kunne ikke gemme dine oplysninger. Prøv igen.');
     } finally {
       setSavingProfile(false);
     }
@@ -1708,8 +1504,8 @@ const LandingScreen = ({ navigation, route }) => {
             </Text>
             <Text style={styles.sectionIntro}>
               {isEditMode
-                ? 'Rediger dine profiloplysninger og familieprÃ¦ferencer.'
-                : 'FortÃ¦l os lidt om dig selv, sÃ¥ familien kan lÃ¦re dig bedre at kende.'}
+                ? 'Rediger dine profiloplysninger og familiepræferencer.'
+                : 'Fortæl os lidt om dig selv, så familien kan lære dig bedre at kende.'}
             </Text>
           </View>
 
@@ -1734,7 +1530,7 @@ const LandingScreen = ({ navigation, route }) => {
               ) : (
                 <>
                   <View style={styles.emojiSection}>
-                    <Text style={styles.emojiLabel}>VÃ¦lg din emoji</Text>
+                    <Text style={styles.emojiLabel}>Vælg din emoji</Text>
                     <Text style={styles.emojiHint}>
                       Din emoji bruges i familiens kalender og lister.
                     </Text>
@@ -1751,7 +1547,7 @@ const LandingScreen = ({ navigation, route }) => {
                             ]}
                             accessibilityRole="button"
                             accessibilityState={{ selected: isSelected }}
-                            accessibilityLabel={`VÃƒÂ¦lg emoji ${emoji}`}
+                            accessibilityLabel={`Vælg emoji ${emoji}`}
                           >
                             <Text
                               style={[
@@ -1787,7 +1583,7 @@ const LandingScreen = ({ navigation, route }) => {
                     style={styles.field}
                   />
                   <View style={styles.genderGroup}>
-                    <Text style={styles.preferenceSubtitle}>KÃƒÂ¸n</Text>
+                    <Text style={styles.preferenceSubtitle}>Køn</Text>
                     <View style={styles.genderChipsWrap}>
                       {GENDER_OPTIONS.map((option) => {
                         const selected = profile.gender === option;
@@ -1801,7 +1597,7 @@ const LandingScreen = ({ navigation, route }) => {
                             ]}
                             accessibilityRole="button"
                             accessibilityState={{ selected }}
-                            accessibilityLabel={`VÃƒÂ¦lg ${option}`}
+                            accessibilityLabel={`Vælg ${option}`}
                           >
                             <Text
                               style={[
@@ -1823,7 +1619,7 @@ const LandingScreen = ({ navigation, route }) => {
                   </View>
                 <View style={styles.locationGroup}>
                   <Text style={styles.preferenceSubtitle}>Lokation (valgfrit)</Text>
-                  <Text style={styles.locationHint}>VÃƒÂ¦lg den storby du bor tÃƒÂ¦ttest pÃƒÂ¥</Text>
+                  <Text style={styles.locationHint}>Vælg den storby du bor tættest på</Text>
                   <View style={styles.locationChipsWrap}>
                     {DANISH_CITY_OPTIONS.map((city) => {
                       const selected = selectedLocation === city;
@@ -1837,7 +1633,7 @@ const LandingScreen = ({ navigation, route }) => {
                           ]}
                           accessibilityRole="button"
                           accessibilityState={{ selected }}
-                          accessibilityLabel={`VÃƒÂ¦lg ${city}`}
+                          accessibilityLabel={`Vælg ${city}`}
                         >
                           <Text
                             style={[
@@ -1853,16 +1649,16 @@ const LandingScreen = ({ navigation, route }) => {
                   </View>
                   {hasLegacyLocation ? (
                     <Text style={styles.validationMessage}>
-                      {`Din tidligere lokation "${normalizedLocation}" understÃƒÂ¸ttes ikke lÃƒÂ¦ngere. VÃƒÂ¦lg en by fra listen.`}
+                      {`Din tidligere lokation "${normalizedLocation}" understøttes ikke længere. Vælg en by fra listen.`}
                     </Text>
                   ) : null}
                 </View>
 
                 <View style={styles.sectionDivider} />
 
-                <Text style={styles.preferenceTitle}>Dine prÃ¦ferencer</Text>
+                <Text style={styles.preferenceTitle}>Dine præferencer</Text>
                 <Text style={styles.preferenceHint}>
-                  VÃ¦lg om du fÃ¸lger familien eller tilpasser selv â€“ og brug hurtigvalgene til hurtigt at sÃ¦tte jeres favorit-tidsrum.
+                  Vælg om du følger familien eller tilpasser selv - og brug hurtigvalgene til hurtigt at sætte jeres favorit-tidsrum.
                 </Text>
                 <Text style={styles.preferenceSubtitle}>Hvordan skal de bruges?</Text>
                 <View style={styles.preferenceModeWrap}>
@@ -1899,7 +1695,7 @@ const LandingScreen = ({ navigation, route }) => {
                 </View>
                 {!canFollowPreference ? (
                   <Text style={styles.preferenceFootnote}>
-                    Inviter mindst Ã©t familiemedlem for at kunne fÃ¸lge deres prÃ¦ferencer.
+                    Inviter mindst ét familiemedlem for at kunne følge deres præferencer.
                   </Text>
                 ) : null}
                 {fieldErrors.preferenceMode ? (
@@ -1910,12 +1706,12 @@ const LandingScreen = ({ navigation, route }) => {
                 {isFollowPreferenceMode ? (
                   <View style={styles.preferenceInfoCard}>
                     <Text style={styles.preferenceInfoTitle}>
-                      FÃ¸lg et familiemedlem
+                      følg et familiemedlem
                     </Text>
                     <Text style={styles.preferenceInfoText}>
                       {selectedFollowMember
                         ? `Dine forslag matcher ${selectedFollowMember.displayName}.`
-                        : 'VÃ¦lg hvem du vil fÃ¸lge herunder.'}
+                        : 'Vælg hvem du vil følge herunder.'}
                     </Text>
                     {followableMembers.length ? (
                       <View style={styles.followList}>
@@ -1950,16 +1746,16 @@ const LandingScreen = ({ navigation, route }) => {
                       </View>
                     ) : (
                       <Text style={styles.preferenceFootnote}>
-                        TilfÃ¸j familiemedlemmer under Konto â–¸ Din familie for at kunne fÃ¸lge dem.
+                        Tilføj familiemedlemmer under Konto ? Din familie for at kunne følge dem.
                       </Text>
                     )}
                   </View>
                 ) : null}
                 {isNoPreferenceMode ? (
                   <View style={styles.preferenceInfoCard}>
-                    <Text style={styles.preferenceInfoTitle}>Ingen prÃ¦ferencer</Text>
+                    <Text style={styles.preferenceInfoTitle}>Ingen præferencer</Text>
                     <Text style={styles.preferenceInfoText}>
-                      FamTime foreslÃ¥r tidspunkter pÃ¥ baggrund af resten af familien, mens dine egne felter kan stÃ¥ tomme.
+                      FamTime foreslår tidspunkter på baggrund af resten af familien, mens dine egne felter kan stå tomme.
                     </Text>
                   </View>
                 ) : null}
@@ -1967,7 +1763,7 @@ const LandingScreen = ({ navigation, route }) => {
                   <View style={styles.customPreferenceSection}>
                     <Text style={styles.preferenceSubtitle}>Foretrukne tidspunkter</Text>
                     <Text style={styles.preferenceFootnote}>
-                      Tryk pÃ¥ en dag for at Ã¥bne den og vÃ¦lg de tidsrum der passer jer â€“ du kan tilfÃ¸je flere tidsrum per dag.
+                      Tryk på en dag for at åbne den og Vælg de tidsrum der passer jer - du kan Tilføje flere tidsrum per dag.
                     </Text>
                     <View style={styles.dayTimeList}>
                       {WEEK_DAYS.map((day) => {
@@ -2016,7 +1812,7 @@ const LandingScreen = ({ navigation, route }) => {
                               <View style={styles.dayAccordionBody}>
                                 <View style={styles.dayAccordionBodyHeader}>
                                   <Text style={styles.dayToggleHint}>
-                                    VÃ¦lg et eller flere hurtigvalg herunder â€“ de nye tidsrum vises som kort, hvor du kan finjustere tiderne.
+                                    Vælg et eller flere hurtigvalg herunder - de nye tidsrum vises som kort, hvor du kan finjustere tiderne.
                                   </Text>
                                 </View>
                                 <View style={styles.timePresetWrap}>
@@ -2049,10 +1845,7 @@ const LandingScreen = ({ navigation, route }) => {
                                             >
                                               {preset.label}
                                             </Text>
-                                            {presetSelected ? (
-                                              <Text style={styles.timePresetCheck}>âœ“</Text>
-                                            ) : null}
-                                          </View>
+                                                                                      </View>
                                           <Text
                                             style={[
                                               styles.timePresetRange,
@@ -2127,7 +1920,7 @@ const LandingScreen = ({ navigation, route }) => {
                                               style={styles.timePickerCloseButton}
                                             >
                                               <Text style={styles.timePickerCloseText}>
-                                                FÃ¦rdig
+                                                Færdig
                                               </Text>
                                             </Pressable>
                                           ) : null}
@@ -2137,7 +1930,7 @@ const LandingScreen = ({ navigation, route }) => {
                                   ))
                                 ) : (
                                   <Text style={styles.dayEmptyHint}>
-                                    Ingen tidsrum for {day.label.toLocaleLowerCase('da-DK')} endnu. VÃ¦lg et interval ovenfor for at komme i gang.
+                                    Ingen tidsrum for {day.label.toLocaleLowerCase('da-DK')} endnu. Vælg et interval ovenfor for at komme i gang.
                                   </Text>
                                 )}
                               </View>
@@ -2151,297 +1944,17 @@ const LandingScreen = ({ navigation, route }) => {
                         {fieldErrors.timeWindows}
                       </Text>
                     ) : null}
+                    <View style={styles.durationHeader}>
+                      <Text style={styles.durationTitle}>Bestem længde på familietid</Text>
+                    </View>
                     <View style={styles.durationSliderBlock}>
                       <DurationRangeSlider
                         minValue={durationSliderMin}
                         maxValue={durationSliderMax}
                         onChange={handleDurationSliderChange}
                       />
-                      <Text style={styles.durationSliderHint}>
-                        TrÃ¦k for at sÃ¦tte intervallet for hvor kort og hvor langt familietid mÃ¥ vÃ¦re.
-                      </Text>
                     </View>
 
-                    <View style={styles.durationGroup}>
-                      <View style={styles.durationHeader}>
-                        <Text style={styles.durationTitle}>Kortest familietid</Text>
-                        <Pressable
-                          onPress={() => handleClearDuration('preferredMinDuration')}
-                        >
-                          <Text
-                            style={[
-                              styles.timeSelectionClear,
-                              profile.preferredMinDuration
-                                ? null
-                                : styles.timeSelectionClearDisabled,
-                            ]}
-                          >
-                            Ryd
-                          </Text>
-                        </Pressable>
-                      </View>
-                      <View style={styles.durationChipWrap}>
-                        {MIN_DURATION_PRESETS.map(({ label, minutes }) => {
-                          const isSelected =
-                            Number(profile.preferredMinDuration) === minutes;
-                          return (
-                            <Pressable
-                              key={`min-${minutes}`}
-                              onPress={() =>
-                                handleSelectDuration('preferredMinDuration', minutes)
-                              }
-                              style={[
-                                styles.durationChip,
-                                isSelected ? styles.durationChipSelected : null,
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.durationChipText,
-                                  isSelected ? styles.durationChipTextSelected : null,
-                                ]}
-                              >
-                                {label}
-                              </Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-                      <View style={styles.durationCustomCard}>
-                        <View style={styles.durationCustomHeader}>
-                          <Text style={styles.durationCustomLabel}>Tilpas selv</Text>
-                          <Text style={styles.durationCustomValue}>
-                            {formatDurationMinutesLabel(minDurationMinutes)}
-                          </Text>
-                        </View>
-                        <View style={styles.durationStepperRow}>
-                          <View
-                            style={[
-                              styles.durationStepperColumn,
-                              styles.durationStepperColumnLast,
-                            ]}
-                          >
-                            <Text style={styles.durationStepperLabel}>Timer</Text>
-                            <View style={styles.durationStepper}>
-                              <Pressable
-                                style={styles.durationStepperButton}
-                                onPress={() =>
-                                  handleDurationStepperChange(
-                                    'preferredMinDuration',
-                                    'hour',
-                                    -1
-                                  )
-                                }
-                                accessibilityRole="button"
-                                accessibilityLabel="Mindsk timer for kortest familietid"
-                              >
-                                <Text style={styles.durationStepperButtonText}>-</Text>
-                              </Pressable>
-                              <Text style={styles.durationStepperValue}>
-                                {minDurationParts.hours}
-                              </Text>
-                              <Pressable
-                                style={styles.durationStepperButton}
-                                onPress={() =>
-                                  handleDurationStepperChange(
-                                    'preferredMinDuration',
-                                    'hour',
-                                    1
-                                  )
-                                }
-                                accessibilityRole="button"
-                                accessibilityLabel="Ã˜g timer for kortest familietid"
-                              >
-                                <Text style={styles.durationStepperButtonText}>+</Text>
-                              </Pressable>
-                            </View>
-                          </View>
-                          <View
-                            style={[
-                              styles.durationStepperColumn,
-                              styles.durationStepperColumnLast,
-                            ]}
-                          >
-                            <Text style={styles.durationStepperLabel}>Minutter</Text>
-                            <View style={styles.durationStepper}>
-                              <Pressable
-                                style={styles.durationStepperButton}
-                                onPress={() =>
-                                  handleDurationStepperChange(
-                                    'preferredMinDuration',
-                                    'minute',
-                                    -1
-                                  )
-                                }
-                                accessibilityRole="button"
-                                accessibilityLabel="Mindsk minutter for kortest familietid"
-                              >
-                                <Text style={styles.durationStepperButtonText}>-</Text>
-                              </Pressable>
-                              <Text style={styles.durationStepperValue}>
-                                {minDurationParts.minutes}
-                              </Text>
-                              <Pressable
-                                style={styles.durationStepperButton}
-                                onPress={() =>
-                                  handleDurationStepperChange(
-                                    'preferredMinDuration',
-                                    'minute',
-                                    1
-                                  )
-                                }
-                                accessibilityRole="button"
-                                accessibilityLabel="Ã˜g minutter for kortest familietid"
-                              >
-                                <Text style={styles.durationStepperButtonText}>+</Text>
-                              </Pressable>
-                            </View>
-                          </View>
-                        </View>
-                      </View>
-                      {fieldErrors.preferredMinDuration ? (
-                        <Text style={styles.validationMessage}>
-                          {fieldErrors.preferredMinDuration}
-                        </Text>
-                      ) : null}
-                    </View>
-
-                    <View style={styles.durationGroup}>
-                      <View style={styles.durationHeader}>
-                        <Text style={styles.durationTitle}>LÃ¦ngst familietid</Text>
-                        <Pressable
-                          onPress={() => handleClearDuration('preferredMaxDuration')}
-                        >
-                          <Text
-                            style={[
-                              styles.timeSelectionClear,
-                              profile.preferredMaxDuration
-                                ? null
-                                : styles.timeSelectionClearDisabled,
-                            ]}
-                          >
-                            Ryd
-                          </Text>
-                        </Pressable>
-                      </View>
-                      <View style={styles.durationChipWrap}>
-                        {MAX_DURATION_PRESETS.map(({ label, minutes }) => {
-                          const isSelected =
-                            Number(profile.preferredMaxDuration) === minutes;
-                          return (
-                            <Pressable
-                              key={`max-${minutes}`}
-                              onPress={() =>
-                                handleSelectDuration('preferredMaxDuration', minutes)
-                              }
-                              style={[
-                                styles.durationChip,
-                                isSelected ? styles.durationChipSelected : null,
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.durationChipText,
-                                  isSelected ? styles.durationChipTextSelected : null,
-                                ]}
-                              >
-                                {label}
-                              </Text>
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-                      <View style={styles.durationCustomCard}>
-                        <View style={styles.durationCustomHeader}>
-                          <Text style={styles.durationCustomLabel}>Tilpas selv</Text>
-                          <Text style={styles.durationCustomValue}>
-                            {formatDurationMinutesLabel(maxDurationMinutes)}
-                          </Text>
-                        </View>
-                        <View style={styles.durationStepperRow}>
-                          <View style={styles.durationStepperColumn}>
-                            <Text style={styles.durationStepperLabel}>Timer</Text>
-                            <View style={styles.durationStepper}>
-                              <Pressable
-                                style={styles.durationStepperButton}
-                                onPress={() =>
-                                  handleDurationStepperChange(
-                                    'preferredMaxDuration',
-                                    'hour',
-                                    -1
-                                  )
-                                }
-                                accessibilityRole="button"
-                                accessibilityLabel="Mindsk timer for lÃ¦ngst familietid"
-                              >
-                                <Text style={styles.durationStepperButtonText}>-</Text>
-                              </Pressable>
-                              <Text style={styles.durationStepperValue}>
-                                {maxDurationParts.hours}
-                              </Text>
-                              <Pressable
-                                style={styles.durationStepperButton}
-                                onPress={() =>
-                                  handleDurationStepperChange(
-                                    'preferredMaxDuration',
-                                    'hour',
-                                    1
-                                  )
-                                }
-                                accessibilityRole="button"
-                                accessibilityLabel="Ã˜g timer for lÃ¦ngst familietid"
-                              >
-                                <Text style={styles.durationStepperButtonText}>+</Text>
-                              </Pressable>
-                            </View>
-                          </View>
-                          <View style={styles.durationStepperColumn}>
-                            <Text style={styles.durationStepperLabel}>Minutter</Text>
-                            <View style={styles.durationStepper}>
-                              <Pressable
-                                style={styles.durationStepperButton}
-                                onPress={() =>
-                                  handleDurationStepperChange(
-                                    'preferredMaxDuration',
-                                    'minute',
-                                    -1
-                                  )
-                                }
-                                accessibilityRole="button"
-                                accessibilityLabel="Mindsk minutter for lÃ¦ngst familietid"
-                              >
-                                <Text style={styles.durationStepperButtonText}>-</Text>
-                              </Pressable>
-                              <Text style={styles.durationStepperValue}>
-                                {maxDurationParts.minutes}
-                              </Text>
-                              <Pressable
-                                style={styles.durationStepperButton}
-                                onPress={() =>
-                                  handleDurationStepperChange(
-                                    'preferredMaxDuration',
-                                    'minute',
-                                    1
-                                  )
-                                }
-                                accessibilityRole="button"
-                                accessibilityLabel="Ã˜g minutter for lÃ¦ngst familietid"
-                              >
-                                <Text style={styles.durationStepperButtonText}>+</Text>
-                              </Pressable>
-                            </View>
-                          </View>
-                        </View>
-                      </View>
-                      {fieldErrors.preferredMaxDuration ? (
-                        <Text style={styles.validationMessage}>
-                          {fieldErrors.preferredMaxDuration}
-                        </Text>
-                      ) : null}
-                    </View>
-                    <Text style={styles.preferenceFootnote}>
-                      Lad felterne stÃ¥ tomme, hvis I er fleksible med bÃ¥de tidsrum og varighed.
-                    </Text>
                   </View>
                 )}
                 <Button
@@ -2458,7 +1971,7 @@ const LandingScreen = ({ navigation, route }) => {
             <View style={[styles.card, styles.familyCard]}>
               <Text style={styles.cardTitle}>Din familie</Text>
               <Text style={styles.cardSubtitle}>
-                FÃ¥ hurtig adgang til delte oplysninger og del familie ID med andre.
+                Få hurtig adgang til delte oplysninger og del familie ID med andre.
               </Text>
 
               <Text style={styles.familyInfoText}>
@@ -2489,3 +2002,10 @@ const LandingScreen = ({ navigation, route }) => {
 
 
 export default LandingScreen;
+
+
+
+
+
+
+

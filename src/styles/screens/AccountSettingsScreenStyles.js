@@ -134,11 +134,13 @@ const styles = StyleSheet.create({
   profileMetaGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: spacing.sm,
+    justifyContent: 'space-between',
     marginTop: spacing.sm,
   },
   profileMetaCard: {
+    width: '48%',
     flexBasis: '48%',
+    marginBottom: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.lg,
@@ -164,13 +166,24 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
   },
   preferenceHighlightGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexDirection: 'column',
     gap: spacing.sm,
     marginTop: spacing.sm,
   },
-  preferenceHighlightCard: {
-    flexBasis: '48%',
+  preferenceHighlightCardFull: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    backgroundColor: colors.surfaceMuted,
+  },
+  preferenceHighlightRow: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+  },
+  preferenceHighlightCardHalf: {
+    flex: 1,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.lg,
@@ -182,6 +195,7 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    textAlign: 'center',
   },
   preferenceHighlightValue: {
     fontSize: fontSizes.sm,

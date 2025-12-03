@@ -844,18 +844,18 @@ const AccountSettingsScreen = ({ navigation }) => {
   const profileEmailLabel = userProfile?.email || userEmail || 'Ukendt';
   const profileMeta = [
     {
-      key: 'age',
-      label: 'Alder',
-      value: userProfile?.age ? String(userProfile.age) : 'Ikke udfyldt',
-    },
-    {
       key: 'gender',
       label: 'Køn',
       value: userProfile?.gender || 'Ikke udfyldt',
     },
     {
+      key: 'age',
+      label: 'Alder',
+      value: userProfile?.age ? String(userProfile.age) : 'Ikke udfyldt',
+    },
+    {
       key: 'location',
-      label: 'Lokation',
+      label: 'By',
       value: userProfile?.location || 'Ikke udfyldt',
     },
     {
@@ -877,15 +877,17 @@ const AccountSettingsScreen = ({ navigation }) => {
     },
     {
       key: 'duration',
-      label: 'Varighedsgrænser',
+      label: 'Varighed',
       value: preferredDurationLabel,
     },
     {
       key: 'source',
-      label: 'Præferencekilde',
+      label: 'Præference',
       value: preferenceSourceLabel,
     },
   ];
+  const fullWidthHighlights = preferenceHighlights.slice(0, 2);
+  const halfWidthHighlights = preferenceHighlights.slice(2);
 
   const shouldShowStatusCard =
     Boolean(error) || Boolean(actionError) || Boolean(statusMessage);
@@ -945,12 +947,28 @@ const AccountSettingsScreen = ({ navigation }) => {
                   ))}
                 </View>
                 <View style={styles.preferenceHighlightGrid}>
-                  {preferenceHighlights.map((item) => (
-                    <View key={item.key} style={styles.preferenceHighlightCard}>
+                  {fullWidthHighlights.map((item) => (
+                    <View
+                      key={item.key}
+                      style={styles.preferenceHighlightCardFull}
+                    >
                       <Text style={styles.preferenceHighlightLabel}>{item.label}</Text>
                       <Text style={styles.preferenceHighlightValue}>{item.value}</Text>
                     </View>
                   ))}
+                  {halfWidthHighlights.length ? (
+                    <View style={styles.preferenceHighlightRow}>
+                      {halfWidthHighlights.map((item) => (
+                        <View
+                          key={item.key}
+                          style={styles.preferenceHighlightCardHalf}
+                        >
+                          <Text style={styles.preferenceHighlightLabel}>{item.label}</Text>
+                          <Text style={styles.preferenceHighlightValue}>{item.value}</Text>
+                        </View>
+                      ))}
+                    </View>
+                  ) : null}
                 </View>
               </>
             )}

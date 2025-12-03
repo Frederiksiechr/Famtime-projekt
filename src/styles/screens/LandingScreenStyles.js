@@ -199,11 +199,6 @@ const styles = StyleSheet.create({
     marginTop: spacing.sm,
     marginBottom: spacing.md,
   },
-  durationSliderHint: {
-    fontSize: fontSizes.xs,
-    color: colors.mutedText,
-    marginTop: spacing.xs,
-  },
   preferenceInfoCard: {
     borderWidth: 1,
     borderColor: colors.border,
@@ -436,14 +431,8 @@ const styles = StyleSheet.create({
   timePresetChipHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
+    justifyContent: 'center',
     marginBottom: spacing.xxs,
-  },
-  timePresetCheck: {
-    fontSize: fontSizes.sm,
-    fontWeight: '700',
-    color: colors.primaryDark,
-    marginLeft: spacing.xs,
   },
   timePresetChipSelected: {
     borderColor: colors.primary,
@@ -453,6 +442,7 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.xs,
     fontWeight: '600',
     color: colors.text,
+    textAlign: 'center',
   },
   timePresetLabelSelected: {
     color: colors.primaryDark,
@@ -460,12 +450,10 @@ const styles = StyleSheet.create({
   timePresetRange: {
     fontSize: fontSizes.xs,
     color: colors.mutedText,
+    textAlign: 'center',
   },
   timePresetRangeSelected: {
     color: colors.primaryDark,
-  },
-  durationGroup: {
-    marginTop: spacing.sm,
   },
   durationHeader: {
     flexDirection: 'row',
@@ -477,105 +465,6 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.sm,
     fontWeight: '700',
     color: colors.text,
-  },
-  durationChipWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginBottom: spacing.xs,
-  },
-  durationChip: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: 999,
-    paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    marginRight: spacing.xs,
-    marginBottom: spacing.xs,
-    backgroundColor: colors.surface,
-  },
-  durationChipSelected: {
-    borderColor: colors.primary,
-    backgroundColor: 'rgba(230, 138, 46, 0.15)',
-  },
-  durationChipText: {
-    fontSize: fontSizes.xs,
-    color: colors.text,
-  },
-  durationChipTextSelected: {
-    color: colors.primaryDark,
-    fontWeight: '600',
-  },
-  durationCustomCard: {
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    padding: spacing.sm,
-    backgroundColor: colors.surface,
-    marginTop: spacing.xs,
-  },
-  durationCustomHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-  },
-  durationCustomLabel: {
-    fontSize: fontSizes.sm,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  durationCustomValue: {
-    fontSize: fontSizes.sm,
-    fontWeight: '700',
-    color: colors.primaryDark,
-  },
-  durationStepperRow: {
-    flexDirection: 'row',
-    marginTop: spacing.sm,
-  },
-  durationStepperColumn: {
-    flex: 1,
-    marginRight: spacing.sm,
-  },
-  durationStepperColumnLast: {
-    marginRight: 0,
-  },
-  durationStepperLabel: {
-    fontSize: fontSizes.xs,
-    color: colors.mutedText,
-    marginBottom: spacing.xs,
-  },
-  durationStepper: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    borderWidth: 1,
-    borderColor: colors.border,
-    borderRadius: radius.md,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs,
-    backgroundColor: colors.surfaceMuted,
-  },
-  durationStepperButton: {
-    width: 36,
-    height: 36,
-    borderRadius: radius.sm,
-    backgroundColor: colors.surface,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 1,
-    borderColor: colors.border,
-  },
-  durationStepperButtonText: {
-    fontSize: fontSizes.lg,
-    fontWeight: '700',
-    color: colors.text,
-  },
-  durationStepperValue: {
-    fontSize: fontSizes.md,
-    fontWeight: '700',
-    color: colors.text,
-    minWidth: 32,
-    textAlign: 'center',
   },
   timeSelectionRow: {
     flexDirection: 'row',

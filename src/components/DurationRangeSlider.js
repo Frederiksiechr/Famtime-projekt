@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { View, Text, PanResponder, StyleSheet } from 'react-native';
 import { colors, spacing, fontSizes, radius } from '../styles/theme';
 
@@ -180,7 +180,7 @@ const DurationRangeSlider = ({
         </View>
       </View>
       <Text style={styles.sliderHelper}>
-        Træk i håndtagene for at sætte minimum og maksimum varighed.
+        Træk i håndtagene for at sætte min og max varighed.
       </Text>
     </View>
   );
@@ -248,3 +248,4 @@ const styles = StyleSheet.create({
 });
 
 export default DurationRangeSlider;
+

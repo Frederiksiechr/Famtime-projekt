@@ -64,8 +64,8 @@ const WEEK_DAYS = [
   { key: 'wednesday', label: 'Onsdag' },
   { key: 'thursday', label: 'Torsdag' },
   { key: 'friday', label: 'Fredag' },
-  { key: 'saturday', label: 'LÃ¸rdag' },
-  { key: 'sunday', label: 'SÃ¸ndag' },
+  { key: 'saturday', label: 'Lørdag' },
+  { key: 'sunday', label: 'Søndag' },
 ];
 const isSameDay = (a, b) => {
   if (!(a instanceof Date) || !(b instanceof Date)) {
@@ -310,7 +310,7 @@ const getDurationLabel = (start, end) => {
 };
 
 const createDefaultEventState = () => {
-  // Initialiserer formularfelter med et start- og sluttidspunkt i nÃ¦r fremtid.
+  // Initialiserer formularfelter med et start- og sluttidspunkt i nær fremtid.
   const start = new Date();
   start.setSeconds(0, 0);
   const end = new Date(start.getTime() + DEFAULT_EVENT_DURATION_MINUTES * 60000);
@@ -407,7 +407,7 @@ const FamilyEventsScreen = () => {
   }, [suggestions]);
 
   useEffect(() => {
-    // NÃ¥r forslagene Ã¦ndrer sig, vÃ¦lger vi automatisk et aktivt tidsrum.
+    // Når forslagene ændrer sig, vælger vi automatisk et aktivt tidsrum.
     if (!sortedSuggestions.length) {
       setActiveSlotId(null);
       return;
@@ -422,7 +422,7 @@ const FamilyEventsScreen = () => {
   }, [sortedSuggestions]);
 
   const activeSuggestion = useMemo(() => {
-    // Finder den suggestion der skal prÃ¦senteres i panelet.
+    // Finder den suggestion der skal præsenteres i panelet.
     if (!sortedSuggestions.length) {
       return null;
     }
@@ -1134,7 +1134,7 @@ const FamilyEventsScreen = () => {
       setSelectedSuggestionId(null);
       setActiveSlotId(null);
       setSuggestionNotice(
-        'Ingen fÃ¦lles foretrukne dage endnu. Opdater familiernes prÃ¦ferencer for at fÃ¥ forslag.'
+        'Ingen fælles foretrukne dage endnu. Opdater familiernes præferencer for at få forslag.'
       );
       return;
     }
@@ -1421,13 +1421,13 @@ const FamilyEventsScreen = () => {
 
   const handlePlanFromMood = useCallback(async () => {
     if (!activeSuggestion) {
-      Alert.alert('VÃ¦lg dato', 'VÃ¦lg fÃ¸rst en af de ledige datoer.');
+      Alert.alert('Vælg dato', 'Vælg først en af de ledige datoer.');
       return;
     }
 
     const trimmedTitle = moodDraftTitle.trim();
     if (!trimmedTitle) {
-      Alert.alert('Manglende titel', 'TilfÃ¸j en titel til begivenheden.');
+      Alert.alert('Manglende titel', 'Tilføj en titel til begivenheden.');
       return;
     }
 
@@ -1588,13 +1588,13 @@ const initializeCalendarContext = useCallback(
     const data = eventState ?? formData ?? {};
 
     if (!familyId) {
-      setFormError('Ingen familie valgt. Tilslut dig en familie og prÃ¸v igen.');
+      setFormError('Ingen familie valgt. Tilslut dig en familie og prøv igen.');
       return false;
     }
 
     const trimmedTitle = (data.title ?? '').trim();
     if (!trimmedTitle.length) {
-      setFormError('TilfÃ¸j en titel til begivenheden.');
+      setFormError('Tilføj en titel til begivenheden.');
       return false;
     }
 
@@ -1689,7 +1689,7 @@ const initializeCalendarContext = useCallback(
       return true;
     } catch (_submitError) {
       setFormError(
-        'Kunne ikke oprette begivenheden. PrÃ¸v igen.'
+        'Kunne ikke oprette begivenheden. Prøv igen.'
       );
       return false;
     } finally {
@@ -1755,7 +1755,7 @@ const initializeCalendarContext = useCallback(
           .onSnapshot((snapshot) => {
             if (!snapshot.exists) {
               setInfoMessage(
-                'Familien blev ikke fundet. MÃ¥ske er den blevet slettet.'
+                'Familien blev ikke fundet. Måske er den blevet slettet.'
               );
               setConfirmedEvents([]);
               setPendingEvents([]);
@@ -1772,7 +1772,7 @@ const initializeCalendarContext = useCallback(
             setEventsLoaded(false);
           });
       } catch (_error) {
-        setError('Kunne ikke hente familieoplysninger. PrÃ¸v igen senere.');
+        setError('Kunne ikke hente familieoplysninger. Prøv igen senere.');
         setFamilyId(null);
         setFamilyMembers([]);
         setEventsLoaded(false);
@@ -1858,7 +1858,7 @@ const initializeCalendarContext = useCallback(
           setEventsLoaded(true);
         },
         () => {
-          setError('Kunne ikke hente familieevents. PrÃ¸v igen senere.');
+          setError('Kunne ikke hente familieevents. Prøv igen senere.');
           setConfirmedEvents([]);
           setPendingEvents([]);
           setEventsLoaded(true);
@@ -1969,12 +1969,12 @@ const initializeCalendarContext = useCallback(
                   try {
                     await Calendar.deleteEventAsync(existingEntry.calendarEventId);
                   } catch (_deleteError) {
-                    // Kan vÃ¦re slettet manuelt; ignorer fejlen og behold den nye reference.
+                    // Kan være slettet manuelt; ignorer fejlen og behold den nye reference.
                   }
                 }
               } else {
                 // Hvis vi hverken kan opdatere eller genskabe, behold den gamle reference
-                // sÃ¥ vi kan prÃ¸ve igen ved nÃ¦ste synkronisering uden at miste kalenderposten.
+                // så vi kan prøve igen ved næste synkronisering uden at miste kalenderposten.
                 updatedEntry = existingEntry;
               }
             }
@@ -2103,7 +2103,7 @@ const initializeCalendarContext = useCallback(
                 style={styles.modalDateButton}
                 onPress={() => setShowStartPicker(true)}
                 accessibilityRole="button"
-                accessibilityLabel="VÃ¦lg starttidspunkt"
+                accessibilityLabel="Vælg starttidspunkt"
               >
                 <Text style={styles.modalDateText}>
                   {formatDateTime(formData.start)}
@@ -2123,7 +2123,7 @@ const initializeCalendarContext = useCallback(
                 style={styles.modalDateButton}
                 onPress={() => setShowEndPicker(true)}
                 accessibilityRole="button"
-                accessibilityLabel="VÃ¦lg sluttidspunkt"
+                accessibilityLabel="Vælg sluttidspunkt"
               >
                 <Text style={styles.modalDateText}>
                   {formatDateTime(formData.end)}
@@ -2166,7 +2166,7 @@ const initializeCalendarContext = useCallback(
                 ]}
               >
                 {suggestionNotice ||
-                  'Ingen oplagte tider i de nÃ¦ste dage. Du kan vÃ¦lge tidspunkt manuelt.'}
+                  'Ingen oplagte tider i de næste dage. Du kan vælge tidspunkt manuelt.'}
               </Text>
             )}
 
@@ -2273,7 +2273,7 @@ const initializeCalendarContext = useCallback(
                   ) : null}
 
                   {loading ? (
-                    <Text style={styles.infoText}>IndlÃ¦ser familiens kalender.</Text>
+                    <Text style={styles.infoText}>Indlæser familiens kalender.</Text>
                   ) : null}
                 </View>
               ) : null}
@@ -2305,8 +2305,8 @@ const initializeCalendarContext = useCallback(
 
                     {sortedSuggestions.length ? null : (
                       <Text style={styles.suggestionEmptyText}>
-                        Ingen ledige datoer fundet endnu. Opdater familieprÃ¦ferencer
-                        under Konto â–¸ Opdater profil.
+                        Ingen ledige datoer fundet endnu. Opdater familiepræferencer
+                        under Konto ▸ Opdater profil.
                       </Text>
                     )}
                   </View>
@@ -2354,7 +2354,7 @@ const initializeCalendarContext = useCallback(
 
                   <View style={styles.sectionCard}>
                     <View style={styles.sectionHeader}>
-                      <Text style={styles.sectionTitle}>Humørkort</Text>
+                      <Text style={styles.sectionTitle}>humørkort</Text>
                       <Text style={styles.sectionHint}>
                         Vælg stemningen for aftalen. Tryk på øjet for at læse mere.
                       </Text>
@@ -2374,7 +2374,7 @@ const initializeCalendarContext = useCallback(
                           ]}
                           accessibilityRole="button"
                           accessibilityState={{ selected: isActiveMood }}
-                          accessibilityLabel={`Humørkort ${mood.label}`}
+                          accessibilityLabel={`humørkort ${mood.label}`}
                         >
                           <View style={styles.moodCardHeader}>
                             <View style={styles.moodCardHeaderText}>
@@ -2415,7 +2415,7 @@ const initializeCalendarContext = useCallback(
                     <View style={[styles.sectionCard, styles.moodEditorCard]}>
                       <Text style={styles.moodEditorTitle}>Tilpas humørkortet</Text>
                       <Text style={styles.moodEditorHint}>
-                        Rediger titel og beskrivelse, eller generÃ©r en ny tekst baseret pÃ¥ humÃ¸ret.
+                        Rediger titel og beskrivelse, eller generér en ny tekst baseret på humøret.
                       </Text>
 
                       <Text style={styles.moodEditorLabel}>Titel</Text>
@@ -2448,7 +2448,7 @@ const initializeCalendarContext = useCallback(
                       ) : null}
 
                       <Button
-                        title="PlanlÃ¦g familieaftalen"
+                        title="Planlæg familieaftalen"
                         onPress={handlePlanFromMood}
                         loading={formSaving}
                         style={styles.moodPrimaryButton}
@@ -2464,8 +2464,8 @@ const initializeCalendarContext = useCallback(
                 </>
               ) : null}
               <Text style={styles.helperText}>
-                NÃ¥r begivenheden er oprettet, vises den under &quot;Min kalender&quot;,
-                hvor alle familiemedlemmer kan godkende eller foreslÃ¥ Ã¦ndringer.
+                Når begivenheden er oprettet, vises den under &quot;Min kalender&quot;,
+                hvor alle familiemedlemmer kan godkende eller foreslå ændringer.
               </Text>
             </View>
             ) : null}
@@ -2481,5 +2481,8 @@ const initializeCalendarContext = useCallback(
 
 
 export default FamilyEventsScreen;
+
+
+
 
 
