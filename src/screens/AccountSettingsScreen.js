@@ -28,6 +28,72 @@ const WEEK_DAY_LABELS = {
   sunday: 'Søndag',
 };
 
+const timeStringToMinutes = (value) => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim();
+  const match = trimmed.match(/^([01]\d|2[0-3]):([0-5]\d)$/);
+  if (!match) {
+    return null;
+  }
+  const hours = Number(match[1]);
+  const minutes = Number(match[2]);
+  return hours * 60 + minutes;
+};
+
+const minutesToTimeString = (minutes) => {
+  const clamped = Math.max(0, Math.min(24 * 60 - 1, minutes));
+  const hours = String(Math.floor(clamped / 60)).padStart(2, '0');
+  const mins = String(clamped % 60).padStart(2, '0');
+  return `${hours}:${mins}`;
+};
+
+const mergeTimeRanges = (entries = []) => {
+  const parsed = entries
+    .map((entry) => {
+      const start = typeof entry?.start === 'string' ? entry.start.trim() : '';
+      const end = typeof entry?.end === 'string' ? entry.end.trim() : '';
+      const startMinutes = timeStringToMinutes(start);
+      const endMinutes = timeStringToMinutes(end);
+      if (
+        startMinutes === null ||
+        endMinutes === null ||
+        endMinutes <= startMinutes
+      ) {
+        return null;
+      }
+      return { start: startMinutes, end: endMinutes };
+    })
+    .filter(Boolean)
+    .sort((rangeA, rangeB) => {
+      if (rangeA.start !== rangeB.start) {
+        return rangeA.start - rangeB.start;
+      }
+      return rangeA.end - rangeB.end;
+    });
+
+  if (!parsed.length) {
+    return [];
+  }
+
+  const merged = [parsed[0]];
+  for (let index = 1; index < parsed.length; index += 1) {
+    const current = parsed[index];
+    const previous = merged[merged.length - 1];
+    if (current.start <= previous.end) {
+      previous.end = Math.max(previous.end, current.end);
+    } else {
+      merged.push({ ...current });
+    }
+  }
+
+  return merged.map(
+    ({ start, end }) =>
+      `${minutesToTimeString(start)}-${minutesToTimeString(end)}`
+  );
+};
+
 const formatTimeWindows = (timeWindows = {}, preferredDays = []) => {
   if (!timeWindows || typeof timeWindows !== 'object') {
     return 'Ikke udfyldt';
@@ -45,16 +111,14 @@ const formatTimeWindows = (timeWindows = {}, preferredDays = []) => {
     const entryList = Array.isArray(timeWindows[dayKey])
       ? timeWindows[dayKey]
       : [];
-    const ranges = entryList
-      .filter((entry) => entry?.start && entry?.end)
-      .map((entry) => `${entry.start}-${entry.end}`);
+    const ranges = mergeTimeRanges(entryList);
     if (ranges.length) {
-      summaries.push(`${label}: ${ranges.join(', ')}`);
+      summaries.push(`${label}: ${ranges.join(' & ')}`);
     }
   });
 
   if (summaries.length) {
-    return summaries.join(' · ');
+    return summaries.join('\n');
   }
   return 'Ikke udfyldt';
 };
