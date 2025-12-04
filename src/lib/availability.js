@@ -18,6 +18,15 @@ const MINUTES_PER_DAY = 24 * 60;
 const DEFAULT_LOOKAHEAD_DAYS = 14;
 const DEFAULT_SLOT_MINUTES = 60;
 const DEFAULT_TIME_ZONE = 'UTC';
+const DANISH_TIME_ZONE = 'Europe/Copenhagen';
+const SLOT_ALIGN_MINUTES = 15;
+const QUIET_START_MINUTES = 6 * 60; // 06:00
+const DEFAULT_WEEKDAY_WINDOW = [{ start: 16 * 60, end: 23 * 60 + 59 }];
+const DEFAULT_WEEKEND_WINDOW = [{ start: 10 * 60, end: 23 * 60 + 59 }];
+const WORK_DAY_SET = new Set(['Mon', 'Tue', 'Wed', 'Thu']);
+const WEEKEND_DAY_SET = new Set(['Fri', 'Sat', 'Sun']);
+const MAX_WEEKDAY_DURATION_MINUTES = 180;
+const MIN_WEEKEND_DURATION_MINUTES = 120;
 
 const WEEKDAY_ORDER = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const WEEKDAY_KEY_SET = new Set(WEEKDAY_ORDER);
@@ -39,6 +48,26 @@ const NORMALIZED_WEEKDAY_MAP = new Map(
     ['sat', 'Sat'],
   ]
 );
+
+const cloneWindows = (windows = []) =>
+  windows.map((window) => ({ start: window.start, end: window.end }));
+
+const getDefaultWindowsForDayKey = (dayKey) => {
+  const template = WEEKEND_DAY_SET.has(dayKey) ? DEFAULT_WEEKEND_WINDOW : DEFAULT_WEEKDAY_WINDOW;
+  return cloneWindows(template);
+};
+
+const clampWindowsToQuietHours = (windows = []) =>
+  windows
+    .map((window) => {
+      const start = Math.max(QUIET_START_MINUTES, window.start);
+      const end = Math.min(MINUTES_PER_DAY, window.end);
+      if (end <= start) {
+        return null;
+      }
+      return { start, end };
+    })
+    .filter((window) => Boolean(window));
 
 const clamp = (value, min, max) => {
   if (Number.isNaN(value) || value == null) {
@@ -212,10 +241,9 @@ const mergeMinuteIntervals = (intervals) => {
 
 const normalizeTimeWindowDefinition = (definition, allowedDays) => {
   const base = new Map();
-  const fullDay = [{ start: 0, end: MINUTES_PER_DAY }];
 
   allowedDays.forEach((day) => {
-    base.set(day, fullDay);
+    base.set(day, clampWindowsToQuietHours(getDefaultWindowsForDayKey(day)));
   });
 
   if (!definition) {
@@ -236,7 +264,9 @@ const normalizeTimeWindowDefinition = (definition, allowedDays) => {
       return null;
     }
 
-    return mergeMinuteIntervals(normalized);
+    const merged = mergeMinuteIntervals(normalized);
+    const clamped = clampWindowsToQuietHours(merged);
+    return clamped.length ? clamped : null;
   };
 
   const fallback = applyEntries(definition.default ?? null);
@@ -256,7 +286,11 @@ const normalizeTimeWindowDefinition = (definition, allowedDays) => {
       merged = applyEntries(definition);
     }
 
-    base.set(day, merged ?? fallback ?? fullDay);
+    const resolved =
+      (merged && merged.length && merged) ||
+      (fallback && fallback.length && fallback) ||
+      clampWindowsToQuietHours(getDefaultWindowsForDayKey(day));
+    base.set(day, resolved.length ? resolved : clampWindowsToQuietHours(getDefaultWindowsForDayKey(day)));
   });
 
   return base;
@@ -518,6 +552,12 @@ const getIsoWeekKey = ({ year, month, day }) => {
   return `${isoYear}-W${String(weekNumber).padStart(2, '0')}`;
 };
 
+const getDayIdFromParts = (parts) =>
+  `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}-${parts.weekday}`;
+
+const isSameDayParts = (a, b) =>
+  a.year === b.year && a.month === b.month && a.day === b.day;
+
 const buildDailyWindows = ({
   planningStart,
   planningEnd,
@@ -534,6 +574,7 @@ const buildDailyWindows = ({
   while (cursor < planningEnd) {
     const parts = getZonedParts(cursor, timeZone);
     const dayKey = parts.weekday;
+    const dayId = getDayIdFromParts(parts);
     const dayWindows = allowedWindows.get(dayKey) ?? [];
     if (dayWindows.length) {
       const dayUtcStart = cursor;
@@ -552,6 +593,7 @@ const buildDailyWindows = ({
             end: clippedEnd,
             dayKey,
             weekKey: getIsoWeekKey(parts),
+            dayId,
           });
         }
       });
@@ -575,7 +617,7 @@ const intersectFreeWithWindows = (freeIntervals, windows) => {
     const start = free.start > window.start ? free.start : window.start;
     const end = free.end < window.end ? free.end : window.end;
     if (end > start) {
-      result.push({ start, end, dayKey: window.dayKey, weekKey: window.weekKey });
+      result.push({ start, end, dayKey: window.dayKey, weekKey: window.weekKey, dayId: window.dayId });
     }
     if (free.end < window.end) {
       i += 1;
@@ -584,66 +626,6 @@ const intersectFreeWithWindows = (freeIntervals, windows) => {
     }
   }
   return result;
-};
-
-const generateSlotsFromInterval = (interval, constraints) => {
-  const {
-    minDurationMinutes,
-    maxDurationMinutes,
-    preferredDurationMinutes,
-    stepMinutes,
-  } = constraints;
-
-  const durationMinutes = Math.floor((interval.end.getTime() - interval.start.getTime()) / MS_PER_MINUTE);
-  const minDuration = Math.max(1, Math.floor(minDurationMinutes ?? 1));
-  const maxDuration = Math.floor(maxDurationMinutes ?? durationMinutes);
-
-  if (maxDuration < minDuration || durationMinutes < minDuration) {
-    return [];
-  }
-
-  const preferred = preferredDurationMinutes ?? DEFAULT_SLOT_MINUTES;
-  let slotLength = Math.floor(preferred);
-  if (!Number.isFinite(slotLength) || slotLength <= 0) {
-    slotLength = DEFAULT_SLOT_MINUTES;
-  }
-  slotLength = clamp(slotLength, minDuration, Math.min(maxDuration, durationMinutes));
-
-  const stride = Math.max(1, Math.floor(stepMinutes ?? slotLength));
-  const strideMs = stride * MS_PER_MINUTE;
-  const slotMs = slotLength * MS_PER_MINUTE;
-
-  const results = [];
-  let cursor = interval.start.getTime();
-  const endMs = interval.end.getTime();
-
-  while (cursor < endMs) {
-    let next = cursor + slotMs;
-    if (next > endMs) {
-      const remaining = endMs - cursor;
-      if (remaining >= minDuration * MS_PER_MINUTE && remaining <= maxDuration * MS_PER_MINUTE) {
-        next = endMs;
-      } else {
-        break;
-      }
-    }
-    const actualDuration = next - cursor;
-    if (actualDuration < minDuration * MS_PER_MINUTE || actualDuration > maxDuration * MS_PER_MINUTE) {
-      break;
-    }
-    results.push({
-      start: new Date(cursor),
-      end: new Date(next),
-      dayKey: interval.dayKey,
-      weekKey: interval.weekKey,
-    });
-    cursor += strideMs;
-    if (endMs - cursor < minDuration * MS_PER_MINUTE) {
-      break;
-    }
-  }
-
-  return results;
 };
 
 const limitSlotsByWeekdayQuota = (slots, maxDaysPerWeek) => {
@@ -669,6 +651,226 @@ const limitSlotsByWeekdayQuota = (slots, maxDaysPerWeek) => {
     }
   });
   return result;
+};
+
+const buildDayDurationOptions = (dayKey, minDuration, maxDuration) => {
+  const baseMin = Math.max(15, Math.floor(minDuration ?? DEFAULT_SLOT_MINUTES));
+  const baseMax = Math.max(baseMin, Math.floor(maxDuration ?? baseMin));
+  let dayMin = baseMin;
+  let dayMax = baseMax;
+
+  if (WORK_DAY_SET.has(dayKey)) {
+    dayMax = Math.min(dayMax, Math.max(dayMin, MAX_WEEKDAY_DURATION_MINUTES));
+  } else if (WEEKEND_DAY_SET.has(dayKey)) {
+    dayMin = Math.max(dayMin, Math.min(dayMax, MIN_WEEKEND_DURATION_MINUTES));
+  }
+
+  if (dayMin > dayMax) {
+    dayMin = dayMax;
+  }
+
+  const mid = clamp(
+    Math.round(((dayMin + dayMax) / 2) / SLOT_ALIGN_MINUTES) * SLOT_ALIGN_MINUTES,
+    dayMin,
+    dayMax
+  );
+
+  return Array.from(
+    new Set([dayMin, mid, dayMax].filter((value) => Number.isFinite(value) && value > 0))
+  );
+};
+
+const STEP_MS = SLOT_ALIGN_MINUTES * MS_PER_MINUTE;
+
+const alignForward = (ms) => Math.ceil(ms / STEP_MS) * STEP_MS;
+
+const alignBackward = (ms) => Math.floor(ms / STEP_MS) * STEP_MS;
+
+const alignNearest = (ms) => Math.round(ms / STEP_MS) * STEP_MS;
+
+const placeSlotInIntervals = (intervals, durationMinutes, bias) => {
+  if (!intervals.length || !Number.isFinite(durationMinutes) || durationMinutes <= 0) {
+    return null;
+  }
+
+  const durationMs = durationMinutes * MS_PER_MINUTE;
+  const eligible = intervals.filter(
+    (interval) => interval.end.getTime() - interval.start.getTime() >= durationMs
+  );
+
+  if (!eligible.length) {
+    return null;
+  }
+
+  if (bias === 'middle') {
+    const sorted = [...eligible].sort(
+      (a, b) => b.end.getTime() - b.start.getTime() - (a.end.getTime() - a.start.getTime())
+    );
+    for (const interval of sorted) {
+      const length = interval.end.getTime() - interval.start.getTime();
+      const offset = (length - durationMs) / 2;
+      const candidateStart = alignNearest(interval.start.getTime() + offset);
+      const start = Math.max(candidateStart, interval.start.getTime());
+      const end = start + durationMs;
+      if (end <= interval.end.getTime()) {
+        return { start: new Date(start), end: new Date(end), sourceInterval: interval };
+      }
+    }
+    return null;
+  }
+
+  if (bias === 'end') {
+    for (let index = eligible.length - 1; index >= 0; index -= 1) {
+      const interval = eligible[index];
+      const candidateStart = alignBackward(interval.end.getTime() - durationMs);
+      if (candidateStart < interval.start.getTime()) {
+        continue;
+      }
+      const end = candidateStart + durationMs;
+      if (end <= interval.end.getTime()) {
+        return {
+          start: new Date(candidateStart),
+          end: new Date(end),
+          sourceInterval: interval,
+        };
+      }
+    }
+    return null;
+  }
+
+  for (const interval of eligible) {
+    const candidateStart = alignForward(interval.start.getTime());
+    const end = candidateStart + durationMs;
+    if (end <= interval.end.getTime()) {
+      return { start: new Date(candidateStart), end: new Date(end), sourceInterval: interval };
+    }
+  }
+
+  return null;
+};
+
+const groupIntervalsByDay = (intervals = []) => {
+  const map = new Map();
+  intervals.forEach((interval) => {
+    const dayId =
+      interval.dayId ??
+      `${interval.dayKey}-${new Date(interval.start).toISOString().slice(0, 10)}`;
+    if (!map.has(dayId)) {
+      map.set(dayId, {
+        dayId,
+        dayKey: interval.dayKey,
+        weekKey: interval.weekKey,
+        intervals: [],
+      });
+    }
+    map.get(dayId).intervals.push(interval);
+  });
+
+  map.forEach((entry) => {
+    entry.intervals.sort((a, b) => a.start.getTime() - b.start.getTime());
+  });
+
+  return Array.from(map.values()).sort(
+    (a, b) => a.intervals[0].start.getTime() - b.intervals[0].start.getTime()
+  );
+};
+
+const generateDaySlots = (groupEntry, constraints) => {
+  const durationOptions = buildDayDurationOptions(
+    groupEntry.dayKey,
+    constraints.minDurationMinutes,
+    constraints.maxDurationMinutes
+  );
+  const biases = ['start', 'middle', 'end'];
+  const used = new Set();
+  const slots = [];
+
+  durationOptions.forEach((duration, index) => {
+    const slot = placeSlotInIntervals(groupEntry.intervals, duration, biases[index] ?? 'start');
+    if (!slot) {
+      return;
+    }
+    const key = `${slot.start.getTime()}-${slot.end.getTime()}`;
+    if (used.has(key)) {
+      return;
+    }
+    used.add(key);
+    slots.push({
+      start: slot.start,
+      end: slot.end,
+      dayKey: groupEntry.dayKey,
+      weekKey: groupEntry.weekKey,
+      dayId: groupEntry.dayId,
+      durationMinutes: duration,
+    });
+  });
+
+  return slots;
+};
+
+const limitSlotsPerDay = (slots, maxPerDay, targetTotal) => {
+  if (!Number.isFinite(maxPerDay) || maxPerDay <= 0) {
+    return slots;
+  }
+  const perDayCounts = new Map();
+  const selected = [];
+  const overflow = [];
+
+  slots.forEach((slot) => {
+    const dayKey = slot.dayId ?? `${slot.dayKey}-${slot.start.toDateString()}`;
+    const count = perDayCounts.get(dayKey) ?? 0;
+    if (count < maxPerDay) {
+      perDayCounts.set(dayKey, count + 1);
+      selected.push(slot);
+    } else {
+      overflow.push(slot);
+    }
+  });
+
+  if (selected.length >= targetTotal) {
+    return [...selected, ...overflow];
+  }
+
+  overflow.forEach((slot) => {
+    if (selected.length < targetTotal) {
+      selected.push(slot);
+    }
+  });
+
+  return selected;
+};
+
+const generateCandidateSlots = (intervals, constraints, targetTotal) => {
+  const groups = groupIntervalsByDay(intervals);
+  const candidates = [];
+
+  groups.forEach((group) => {
+    candidates.push(...generateDaySlots(group, constraints));
+  });
+
+  return limitSlotsPerDay(
+    candidates.sort((a, b) => a.start.getTime() - b.start.getTime()),
+    2,
+    targetTotal
+  );
+};
+
+const filterSlotsBySameDayRules = (slots, referenceParts, timeZone) => {
+  if (!referenceParts || !slots.length) {
+    return slots;
+  }
+  const referenceHour = referenceParts.hour ?? 0;
+
+  return slots.filter((slot) => {
+    const slotParts = getZonedParts(slot.start, timeZone);
+    if (!isSameDayParts(slotParts, referenceParts)) {
+      return true;
+    }
+    if (referenceHour >= 12) {
+      return false;
+    }
+    return (slotParts.hour ?? 0) >= 17;
+  });
 };
 
 const extractPreferencesFromEntry = (entry = {}, fallback = {}) => {
@@ -726,6 +928,7 @@ const deriveGroupConstraints = ({
   userPreferences,
   planningStart,
   planningEnd,
+  defaultSlotDurationMinutes = DEFAULT_SLOT_MINUTES,
 }) => {
   let allowedWeekdays =
     normalizeWeekdayList(groupPreferences.allowedWeekdays) ?? [...WEEKDAY_ORDER.slice(1), WEEKDAY_ORDER[0]];
@@ -734,21 +937,22 @@ const deriveGroupConstraints = ({
 
   let minDuration = Number.isFinite(groupPreferences.minDurationMinutes)
     ? groupPreferences.minDurationMinutes
-    : 0;
+    : defaultSlotDurationMinutes;
   let maxDuration = Number.isFinite(groupPreferences.maxDurationMinutes)
-    ? groupPreferences.maxDurationMinutes
-    : null;
+    ? Math.max(groupPreferences.maxDurationMinutes, minDuration)
+    : Math.max(minDuration, defaultSlotDurationMinutes * 4);
   let preferredDuration = Number.isFinite(groupPreferences.preferredDurationMinutes)
     ? groupPreferences.preferredDurationMinutes
-    : null;
+    : defaultSlotDurationMinutes;
   let slotStepMinutes = Number.isFinite(groupPreferences.slotStepMinutes)
-    ? groupPreferences.slotStepMinutes
-    : null;
+    ? Math.max(SLOT_ALIGN_MINUTES, groupPreferences.slotStepMinutes)
+    : SLOT_ALIGN_MINUTES;
   let maxSuggestionDaysPerWeek = Number.isFinite(groupPreferences.maxSuggestionDaysPerWeek)
     ? groupPreferences.maxSuggestionDaysPerWeek
     : null;
 
-  let resolvedTimeZone = groupPreferences.timeZone ?? DEFAULT_TIME_ZONE;
+  let resolvedTimeZone = groupPreferences.timeZone ?? DANISH_TIME_ZONE;
+  const hasExplicitGroupTimeZone = Boolean(groupPreferences.timeZone);
 
   calendars.forEach((calendar) => {
     const userPref = extractPreferencesFromEntry(
@@ -778,16 +982,17 @@ const deriveGroupConstraints = ({
         : userPref.preferredDurationMinutes;
     }
     if (Number.isFinite(userPref.slotStepMinutes)) {
+      const normalizedStep = Math.max(SLOT_ALIGN_MINUTES, userPref.slotStepMinutes);
       slotStepMinutes = slotStepMinutes
-        ? Math.min(slotStepMinutes, userPref.slotStepMinutes)
-        : userPref.slotStepMinutes;
+        ? Math.min(slotStepMinutes, normalizedStep)
+        : normalizedStep;
     }
     if (Number.isFinite(userPref.maxSuggestionDaysPerWeek)) {
       maxSuggestionDaysPerWeek = maxSuggestionDaysPerWeek
         ? Math.min(maxSuggestionDaysPerWeek, userPref.maxSuggestionDaysPerWeek)
         : userPref.maxSuggestionDaysPerWeek;
     }
-    if (userPref.timeZone && resolvedTimeZone === DEFAULT_TIME_ZONE) {
+    if (userPref.timeZone && !hasExplicitGroupTimeZone && resolvedTimeZone === DANISH_TIME_ZONE) {
       resolvedTimeZone = userPref.timeZone;
     }
   });
@@ -795,6 +1000,14 @@ const deriveGroupConstraints = ({
   if (!allowedWeekdays.length) {
     return null;
   }
+
+  minDuration = Math.max(15, Math.floor(minDuration));
+  maxDuration = Math.max(minDuration, Math.floor(maxDuration ?? minDuration));
+  preferredDuration = clamp(
+    Math.floor(preferredDuration ?? minDuration),
+    minDuration,
+    maxDuration
+  );
 
   const allowedWindows = new Map();
   allowedWeekdays.forEach((day) => {
@@ -899,11 +1112,14 @@ export const findMutualAvailability = ({
     userPreferences,
     planningStart,
     planningEnd,
+    defaultSlotDurationMinutes,
   });
 
   if (!constraints) {
     return { slots: [], constraints: null };
   }
+
+  const referenceParts = getZonedParts(planningStart, constraints.timeZone);
 
   const freeIntervalSets = injectedCalendars.map((calendar) => {
     if (!calendar.busy.length) {
@@ -937,24 +1153,28 @@ export const findMutualAvailability = ({
     return { slots: [], constraints };
   }
 
-  const slotConstraints = {
-    minDurationMinutes: constraints.minDurationMinutes,
-    maxDurationMinutes: constraints.maxDurationMinutes,
-    preferredDurationMinutes: constraints.preferredDurationMinutes ?? defaultSlotDurationMinutes,
-    stepMinutes: constraints.slotStepMinutes,
-  };
+  const targetSuggestions = Math.max(1, Math.floor(maxSuggestions ?? 1));
+  let candidateSlots = generateCandidateSlots(
+    eligibleIntervals,
+    {
+      minDurationMinutes: constraints.minDurationMinutes,
+      maxDurationMinutes: constraints.maxDurationMinutes,
+    },
+    targetSuggestions * 2
+  );
 
-  const slots = eligibleIntervals
-    .flatMap((interval) => generateSlotsFromInterval(interval, slotConstraints))
-    .sort((a, b) => a.start.getTime() - b.start.getTime());
+  candidateSlots = filterSlotsBySameDayRules(candidateSlots, referenceParts, constraints.timeZone);
 
-  if (!slots.length) {
+  if (!candidateSlots.length) {
     return { slots: [], constraints };
   }
 
-  const limitedByWeek = limitSlotsByWeekdayQuota(slots, constraints.maxSuggestionDaysPerWeek);
+  const limitedByWeek = limitSlotsByWeekdayQuota(
+    candidateSlots,
+    constraints.maxSuggestionDaysPerWeek
+  );
 
-  const finalSlots = limitedByWeek.slice(0, Math.max(1, Math.floor(maxSuggestions ?? 1)));
+  const finalSlots = limitedByWeek.slice(0, targetSuggestions);
 
   return {
     slots: finalSlots,

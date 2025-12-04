@@ -28,8 +28,7 @@ import AISuggestion, {
   generateProfileSuggestion,
 } from '../components/AISuggestion';
 import { auth, db, firebase } from '../lib/firebase';
-import { availabilityUtils } from '../lib/availability';
-import buildFamilySuggestions from '../lib/suggestionEngine';
+import findMutualAvailability, { availabilityUtils } from '../lib/availability';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import styles from '../styles/screens/FamilyEventsScreenStyles';
@@ -41,6 +40,7 @@ import {
 const DEFAULT_EVENT_DURATION_MINUTES = 60;
 const MIN_EVENT_DURATION_MINUTES = 15;
 const SUGGESTION_LIMIT = 6;
+const AVAILABILITY_LOOKAHEAD_DAYS = 21;
 const DEVICE_BUSY_POLL_INTERVAL_MS = 10 * 1000;
 const CALENDAR_DEVICE_LOOKAHEAD_DAYS = 21;
 const isIOS = Platform.OS === 'ios';
@@ -140,6 +140,34 @@ const mergeBusyIntervals = (primary = [], secondary = []) => {
   }
 
   return merged;
+};
+
+const buildEventBusyIntervals = (events = []) => {
+  if (!Array.isArray(events)) {
+    return [];
+  }
+
+  const intervals = [];
+  const appendInterval = (startValue, endValue) => {
+    const start = availabilityUtils.toDate(startValue);
+    const end = availabilityUtils.toDate(endValue);
+    if (!start || !end || end <= start) {
+      return;
+    }
+    intervals.push({
+      start: new Date(start.getTime()),
+      end: new Date(end.getTime()),
+    });
+  };
+
+  events.forEach((event) => {
+    appendInterval(event?.start, event?.end);
+    if (event?.pendingChange) {
+      appendInterval(event.pendingChange.start, event.pendingChange.end);
+    }
+  });
+
+  return intervals;
 };
 
 const normalizeBusyPayload = (input) => {
@@ -358,7 +386,6 @@ const FamilyEventsScreen = () => {
   const [moodDraftDescription, setMoodDraftDescription] = useState('');
   const [moodPreview, setMoodPreview] = useState(null);
   const [deviceBusyRefreshToken, setDeviceBusyRefreshToken] = useState(0);
-  const [deviceBusySyncVersion, setDeviceBusySyncVersion] = useState(0);
   const deviceBusyLoadedRef = useRef('');
   const requestDeviceBusyRefresh = useCallback(() => {
     setDeviceBusyRefreshToken((token) => token + 1);
@@ -860,8 +887,6 @@ const FamilyEventsScreen = () => {
             },
           };
         });
-
-        setDeviceBusySyncVersion((version) => version + 1);
         deviceBusyLoadedRef.current = loadKey;
       } catch (error) {
         console.warn('[FamilyEvents] loadDeviceCalendarBusy', error);
@@ -900,6 +925,60 @@ const FamilyEventsScreen = () => {
       };
     });
   }, [familyMembers, currentUserId, calendarAvailability]);
+
+  const availabilityUserPreferences = useMemo(() => {
+    if (!familyPreferences || typeof familyPreferences !== 'object') {
+      return {};
+    }
+
+    const normalized = {};
+    Object.entries(familyPreferences).forEach(([userId, prefs]) => {
+      if (!prefs || typeof prefs !== 'object') {
+        return;
+      }
+
+      const entry = {};
+      if (Array.isArray(prefs.days) && prefs.days.length) {
+        entry.allowedWeekdays = prefs.days;
+      }
+      if (prefs.timeWindows) {
+        entry.timeWindows = prefs.timeWindows;
+      }
+
+      const numericFields = [
+        'minDurationMinutes',
+        'maxDurationMinutes',
+        'preferredDurationMinutes',
+        'slotStepMinutes',
+        'maxSuggestionDaysPerWeek',
+        'bufferBeforeMinutes',
+        'bufferAfterMinutes',
+      ];
+
+      numericFields.forEach((key) => {
+        const value = prefs[key];
+        if (typeof value === 'number' && Number.isFinite(value)) {
+          entry[key] = value;
+        }
+      });
+
+      if (typeof prefs.timeZone === 'string' && prefs.timeZone.trim().length) {
+        entry.timeZone = prefs.timeZone.trim();
+      }
+
+      if (Object.keys(entry).length) {
+        normalized[userId] = entry;
+      }
+    });
+
+    return normalized;
+  }, [familyPreferences]);
+
+  const globalBusyIntervals = useMemo(() => {
+    const confirmedBusy = buildEventBusyIntervals(confirmedEvents);
+    const pendingBusy = buildEventBusyIntervals(pendingEvents);
+    return mergeBusyIntervals([...confirmedBusy, ...pendingBusy], []);
+  }, [confirmedEvents, pendingEvents]);
 
   const handleOpenCreateForm = (suggestion = null, overrides = {}) => {
   if (!familyId) {
@@ -987,25 +1066,54 @@ const FamilyEventsScreen = () => {
   };
 
   const buildSuggestions = useCallback(() => {
-    const result = buildFamilySuggestions({
-      confirmedEvents,
-      pendingEvents,
-      calendarEntries,
-      familyPreferences,
-      limit: SUGGESTION_LIMIT,
+    const periodStart = new Date();
+    periodStart.setSeconds(0, 0);
+    const periodEnd = new Date(
+      periodStart.getTime() + AVAILABILITY_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000
+    );
+
+    const availabilityResult = findMutualAvailability({
+      calendars: calendarEntries,
+      periodStart,
+      periodEnd,
+      groupPreferences: {},
+      userPreferences: availabilityUserPreferences,
+      globalBusyIntervals,
+      maxSuggestions: SUGGESTION_LIMIT,
+      defaultSlotDurationMinutes: DEFAULT_EVENT_DURATION_MINUTES,
     });
 
-    if (result.reason) {
-      setSuggestionNotice(result.reason);
-    } else {
-      setSuggestionNotice('');
+    const slots = Array.isArray(availabilityResult.slots)
+      ? availabilityResult.slots
+      : [];
+
+    if (!slots.length) {
+      setSuggestions([]);
+      setSelectedSuggestionId(null);
+      setActiveSlotId(null);
+      setSuggestionNotice(
+        availabilityResult.constraints
+          ? 'Ingen ledige tidsrum inden for præferencerne. Juster dagene eller tidsvinduerne.'
+          : 'Kunne ikke finde fælles tilgængelighed. Tilføj eller opdater familiepræferencer.'
+      );
+      return;
     }
 
-    const nextSuggestions = result.suggestions ?? [];
+    const nextSuggestions = slots.map((slot, index) => ({
+      id: `${slot.start.getTime()}-${slot.end.getTime()}-${index}`,
+      start: slot.start,
+      end: slot.end,
+    }));
+
+    setSuggestionNotice('');
     setSuggestions(nextSuggestions);
     setSelectedSuggestionId(null);
-    setActiveSlotId(nextSuggestions.length ? nextSuggestions[0].id : null);
-  }, [confirmedEvents, pendingEvents, familyPreferences, calendarEntries, deviceBusySyncVersion]);
+    setActiveSlotId(nextSuggestions[0]?.id ?? null);
+  }, [
+    calendarEntries,
+    availabilityUserPreferences,
+    globalBusyIntervals,
+  ]);
 
   useEffect(() => {
     buildSuggestions();
