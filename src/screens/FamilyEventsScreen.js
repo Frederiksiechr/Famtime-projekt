@@ -1081,6 +1081,7 @@ const FamilyEventsScreen = () => {
       globalBusyIntervals,
       maxSuggestions: SUGGESTION_LIMIT,
       defaultSlotDurationMinutes: DEFAULT_EVENT_DURATION_MINUTES,
+      seedKey: familyId || currentUserId || 'famtime',
     });
 
     const slots = Array.isArray(availabilityResult.slots)

@@ -36,16 +36,25 @@ const NORMALIZED_WEEKDAY_MAP = new Map(
     ['sun', 'Sun'],
     ['mon', 'Mon'],
     ['monday', 'Mon'],
+    ['mandag', 'Mon'],
     ['tuesday', 'Tue'],
     ['tue', 'Tue'],
+    ['tirsdag', 'Tue'],
     ['wednesday', 'Wed'],
     ['wed', 'Wed'],
+    ['onsdag', 'Wed'],
     ['thursday', 'Thu'],
     ['thu', 'Thu'],
+    ['torsdag', 'Thu'],
     ['friday', 'Fri'],
     ['fri', 'Fri'],
+    ['fredag', 'Fri'],
     ['saturday', 'Sat'],
     ['sat', 'Sat'],
+    ['l\u00f8rdag', 'Sat'],
+    ['lordag', 'Sat'],
+    ['s\u00f8ndag', 'Sun'],
+    ['sondag', 'Sun'],
   ]
 );
 
@@ -239,6 +248,85 @@ const mergeMinuteIntervals = (intervals) => {
   return result;
 };
 
+const normalizeWindowListEntries = (entries) => {
+  if (!entries && entries !== 0) {
+    return [];
+  }
+
+  const list = Array.isArray(entries) ? entries : [entries];
+  const normalized = list
+    .map((entry) => {
+      if (entry && typeof entry.start === 'number' && typeof entry.end === 'number') {
+        return { start: entry.start, end: entry.end };
+      }
+      return normalizeWindowEntry(entry);
+    })
+    .filter((entry) => Boolean(entry));
+
+  if (!normalized.length) {
+    return [];
+  }
+
+  return clampWindowsToQuietHours(mergeMinuteIntervals(normalized));
+};
+
+const collectExplicitTimeWindows = (definition, allowedDays) => {
+  const map = new Map();
+  if (!definition) {
+    return map;
+  }
+
+  const allowedSet = Array.isArray(allowedDays) && allowedDays.length ? new Set(allowedDays) : null;
+  const allowedDayList = allowedSet ? Array.from(allowedSet) : WEEKDAY_ORDER;
+
+  const storeNormalizedEntries = (dayKey, windows) => {
+    if (!dayKey || (allowedSet && !allowedSet.has(dayKey)) || !windows || !windows.length) {
+      return;
+    }
+    const existing = map.get(dayKey) ?? [];
+    map.set(dayKey, mergeMinuteIntervals(existing.concat(windows)));
+  };
+
+  if (Array.isArray(definition)) {
+    const normalized = normalizeWindowListEntries(definition);
+    if (normalized.length) {
+      allowedDayList.forEach((dayKey) => {
+        storeNormalizedEntries(dayKey, normalized);
+      });
+    }
+    return map;
+  }
+
+  if (typeof definition !== 'object') {
+    return map;
+  }
+
+  if (definition.default) {
+    const normalizedDefault = normalizeWindowListEntries(definition.default);
+    if (normalizedDefault.length) {
+      allowedDayList.forEach((dayKey) => {
+        if (!map.has(dayKey)) {
+          map.set(dayKey, normalizedDefault);
+        }
+      });
+    }
+  }
+
+  Object.keys(definition).forEach((key) => {
+    if (key === 'default') {
+      return;
+    }
+    const dayKey = normalizeWeekdayKey(key);
+    if (!dayKey) {
+      return;
+    }
+    const windows = normalizeWindowListEntries(definition[key]);
+    storeNormalizedEntries(dayKey, windows);
+  });
+
+  return map;
+};
+
 const normalizeTimeWindowDefinition = (definition, allowedDays) => {
   const base = new Map();
 
@@ -248,6 +336,27 @@ const normalizeTimeWindowDefinition = (definition, allowedDays) => {
 
   if (!definition) {
     return base;
+  }
+
+  const normalizedKeyEntries = new Map();
+  if (typeof definition === 'object') {
+    Object.keys(definition).forEach((key) => {
+      if (key === 'default') {
+        return;
+      }
+      const normalizedKey = normalizeWeekdayKey(key);
+      if (!normalizedKey) {
+        return;
+      }
+      const existing = normalizedKeyEntries.get(normalizedKey) ?? [];
+      const value = definition[key];
+      if (Array.isArray(value)) {
+        normalizedKeyEntries.set(normalizedKey, existing.concat(value));
+      } else {
+        existing.push(value);
+        normalizedKeyEntries.set(normalizedKey, existing);
+      }
+    });
   }
 
   const applyEntries = (rawEntries) => {
@@ -271,8 +380,11 @@ const normalizeTimeWindowDefinition = (definition, allowedDays) => {
 
   const fallback = applyEntries(definition.default ?? null);
   allowedDays.forEach((day) => {
-    const dayVariants = [day, day.toLowerCase(), day.slice(0, 3).toLowerCase()];
     let merged = null;
+    if (normalizedKeyEntries.has(day)) {
+      merged = applyEntries(normalizedKeyEntries.get(day));
+    }
+    const dayVariants = [day, day.toLowerCase(), day.slice(0, 3).toLowerCase()];
     for (const variant of dayVariants) {
       if (definition[variant]) {
         merged = applyEntries(definition[variant]);
@@ -558,6 +670,41 @@ const getDayIdFromParts = (parts) =>
 const isSameDayParts = (a, b) =>
   a.year === b.year && a.month === b.month && a.day === b.day;
 
+const makeDeterministicSeed = (...parts) => {
+  const input = parts
+    .filter((part) => part !== undefined && part !== null)
+    .map((part) => String(part))
+    .join('|');
+  if (!input.length) {
+    return 1;
+  }
+  let hash = 0;
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash << 5) - hash + input.charCodeAt(index);
+    hash |= 0; // 32bit
+  }
+  return hash >>> 0;
+};
+
+const createSeededRng = (...seedParts) => {
+  let seed = makeDeterministicSeed(...seedParts);
+  return () => {
+    seed = (seed + 0x6d2b79f5) >>> 0;
+    let t = seed;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+const shuffleArray = (array, rng) => {
+  for (let i = array.length - 1; i > 0; i -= 1) {
+    const j = Math.floor(rng() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+};
+
 const buildDailyWindows = ({
   planningStart,
   planningEnd,
@@ -669,15 +816,23 @@ const buildDayDurationOptions = (dayKey, minDuration, maxDuration) => {
     dayMin = dayMax;
   }
 
-  const mid = clamp(
-    Math.round(((dayMin + dayMax) / 2) / SLOT_ALIGN_MINUTES) * SLOT_ALIGN_MINUTES,
-    dayMin,
-    dayMax
-  );
+  const alignDuration = (value) => {
+    if (!Number.isFinite(value)) {
+      return null;
+    }
+    const aligned = Math.round(value / SLOT_ALIGN_MINUTES) * SLOT_ALIGN_MINUTES;
+    const clamped = clamp(aligned, dayMin, dayMax);
+    return clamped >= dayMin && clamped <= dayMax ? clamped : null;
+  };
 
-  return Array.from(
-    new Set([dayMin, mid, dayMax].filter((value) => Number.isFinite(value) && value > 0))
-  );
+  const mid = alignDuration((dayMin + dayMax) / 2);
+  const nearMin = alignDuration((dayMin + (mid ?? dayMin)) / 2);
+  const nearMax = alignDuration(((mid ?? dayMax) + dayMax) / 2);
+
+  const options = [dayMin, mid, dayMax, nearMin, nearMax]
+    .filter((value) => Number.isFinite(value) && value > 0);
+
+  return Array.from(new Set(options)).sort((a, b) => a - b);
 };
 
 const STEP_MS = SLOT_ALIGN_MINUTES * MS_PER_MINUTE;
@@ -775,24 +930,37 @@ const groupIntervalsByDay = (intervals = []) => {
   );
 };
 
-const generateDaySlots = (groupEntry, constraints) => {
+const generateDaySlots = (groupEntry, constraints, seedKey) => {
   const durationOptions = buildDayDurationOptions(
     groupEntry.dayKey,
     constraints.minDurationMinutes,
     constraints.maxDurationMinutes
   );
-  const biases = ['start', 'middle', 'end'];
-  const used = new Set();
-  const slots = [];
+  if (!durationOptions.length) {
+    return [];
+  }
 
-  durationOptions.forEach((duration, index) => {
-    const slot = placeSlotInIntervals(groupEntry.intervals, duration, biases[index] ?? 'start');
+  const rng = createSeededRng(seedKey, groupEntry.dayId, groupEntry.weekKey);
+  const isWeekend = WEEKEND_DAY_SET.has(groupEntry.dayKey);
+
+  let slotsForDay = isWeekend ? 2 : 1;
+  slotsForDay = Math.min(slotsForDay, durationOptions.length);
+
+  const shuffledDurations = shuffleArray([...durationOptions], rng);
+  const biasPool = shuffleArray(['start', 'middle', 'end'], rng);
+  const slots = [];
+  const used = new Set();
+
+  while (shuffledDurations.length && slots.length < slotsForDay) {
+    const duration = shuffledDurations.shift();
+    const bias = biasPool[slots.length % biasPool.length] ?? 'start';
+    const slot = placeSlotInIntervals(groupEntry.intervals, duration, bias);
     if (!slot) {
-      return;
+      continue;
     }
     const key = `${slot.start.getTime()}-${slot.end.getTime()}`;
     if (used.has(key)) {
-      return;
+      continue;
     }
     used.add(key);
     slots.push({
@@ -803,56 +971,77 @@ const generateDaySlots = (groupEntry, constraints) => {
       dayId: groupEntry.dayId,
       durationMinutes: duration,
     });
-  });
+  }
 
   return slots;
 };
 
-const limitSlotsPerDay = (slots, maxPerDay, targetTotal) => {
-  if (!Number.isFinite(maxPerDay) || maxPerDay <= 0) {
-    return slots;
-  }
-  const perDayCounts = new Map();
-  const selected = [];
-  const overflow = [];
-
-  slots.forEach((slot) => {
-    const dayKey = slot.dayId ?? `${slot.dayKey}-${slot.start.toDateString()}`;
-    const count = perDayCounts.get(dayKey) ?? 0;
-    if (count < maxPerDay) {
-      perDayCounts.set(dayKey, count + 1);
-      selected.push(slot);
-    } else {
-      overflow.push(slot);
-    }
-  });
-
-  if (selected.length >= targetTotal) {
-    return [...selected, ...overflow];
-  }
-
-  overflow.forEach((slot) => {
-    if (selected.length < targetTotal) {
-      selected.push(slot);
-    }
-  });
-
-  return selected;
-};
-
-const generateCandidateSlots = (intervals, constraints, targetTotal) => {
+const generateCandidateSlots = (intervals, constraints, targetTotal, seedKey, planningStart) => {
   const groups = groupIntervalsByDay(intervals);
-  const candidates = [];
 
-  groups.forEach((group) => {
-    candidates.push(...generateDaySlots(group, constraints));
-  });
+  const bundles = groups
+    .map((group) => ({
+      group,
+      slots: generateDaySlots(group, constraints, seedKey),
+    }))
+    .filter((bundle) => bundle.slots.length)
+    .sort((a, b) => a.slots[0].start.getTime() - b.slots[0].start.getTime());
 
-  return limitSlotsPerDay(
-    candidates.sort((a, b) => a.start.getTime() - b.start.getTime()),
-    2,
-    targetTotal
-  );
+  let totalSlots = bundles.reduce((sum, bundle) => sum + bundle.slots.length, 0);
+
+  if (!totalSlots) {
+    return [];
+  }
+
+  const removedBundles = [];
+
+  if (totalSlots > targetTotal && bundles.length > 1) {
+    const rng = createSeededRng(seedKey, planningStart?.toISOString?.() ?? '', targetTotal);
+    while (totalSlots > targetTotal && bundles.length > 1) {
+      const weekendIndexes = bundles
+        .map((bundle, index) => ({ index, bundle }))
+        .filter(({ bundle }) => WEEKEND_DAY_SET.has(bundle.group.dayKey));
+      const weekdayIndexes = bundles
+        .map((bundle, index) => ({ index, bundle }))
+        .filter(({ bundle }) => WORK_DAY_SET.has(bundle.group.dayKey));
+
+      let dropIndex = -1;
+      if (weekendIndexes.length) {
+        const pick = weekendIndexes[Math.floor(rng() * weekendIndexes.length)];
+        dropIndex = pick.index;
+      } else if (weekdayIndexes.length > 1) {
+        const pick = weekdayIndexes[weekdayIndexes.length - 1];
+        dropIndex = pick.index;
+      } else {
+        dropIndex = Math.floor(rng() * bundles.length);
+      }
+
+      const [removed] = bundles.splice(dropIndex, 1);
+      removedBundles.push(removed);
+      totalSlots -= removed.slots.length;
+    }
+  }
+
+  const hasWeekdayInBundles = bundles.some((bundle) => WORK_DAY_SET.has(bundle.group.dayKey));
+  const removedWeekday = removedBundles
+    .filter((bundle) => WORK_DAY_SET.has(bundle.group.dayKey))
+    .sort((a, b) => a.slots[0].start.getTime() - b.slots[0].start.getTime())[0];
+
+  if (!hasWeekdayInBundles && removedWeekday) {
+    const weekendIndex = bundles.findIndex((bundle) => WEEKEND_DAY_SET.has(bundle.group.dayKey));
+    if (weekendIndex >= 0) {
+      removedBundles.push(bundles[weekendIndex]);
+      bundles.splice(weekendIndex, 1, removedWeekday);
+    } else if (bundles.length < targetTotal) {
+      bundles.push(removedWeekday);
+    }
+  }
+
+  const flattened = bundles
+    .flatMap((bundle) => bundle.slots)
+    .sort((a, b) => a.start.getTime() - b.start.getTime());
+
+  return flattened.slice(0, targetTotal);
 };
 
 const filterSlotsBySameDayRules = (slots, referenceParts, timeZone) => {
@@ -929,11 +1118,13 @@ const deriveGroupConstraints = ({
   planningStart,
   planningEnd,
   defaultSlotDurationMinutes = DEFAULT_SLOT_MINUTES,
+  seedKey = '',
 }) => {
   let allowedWeekdays =
     normalizeWeekdayList(groupPreferences.allowedWeekdays) ?? [...WEEKDAY_ORDER.slice(1), WEEKDAY_ORDER[0]];
 
   let mergedWindows = normalizeTimeWindowDefinition(groupPreferences.timeWindows, allowedWeekdays);
+  const weekdayFallbackWindows = new Map();
 
   let minDuration = Number.isFinite(groupPreferences.minDurationMinutes)
     ? groupPreferences.minDurationMinutes
@@ -968,6 +1159,18 @@ const deriveGroupConstraints = ({
     const dayWindows = normalizeTimeWindowDefinition(userPref.timeWindows, allowedWeekdays);
     mergedWindows = intersectDayWindows(mergedWindows, dayWindows, allowedWeekdays);
 
+    if (userPref.timeWindows) {
+      const explicitDayScope = normalizedDays && normalizedDays.length ? normalizedDays : allowedWeekdays;
+      const explicitMap = collectExplicitTimeWindows(userPref.timeWindows, explicitDayScope);
+      explicitMap.forEach((windows, dayKey) => {
+        if (!WORK_DAY_SET.has(dayKey) || !windows.length) {
+          return;
+        }
+        const existing = weekdayFallbackWindows.get(dayKey) ?? [];
+        weekdayFallbackWindows.set(dayKey, mergeMinuteIntervals(existing.concat(windows)));
+      });
+    }
+
     if (Number.isFinite(userPref.minDurationMinutes)) {
       minDuration = Math.max(minDuration, userPref.minDurationMinutes);
     }
@@ -1001,6 +1204,13 @@ const deriveGroupConstraints = ({
     return null;
   }
 
+  const allowedWeekdaySet = new Set(allowedWeekdays);
+  Array.from(weekdayFallbackWindows.keys()).forEach((dayKey) => {
+    if (!allowedWeekdaySet.has(dayKey)) {
+      weekdayFallbackWindows.delete(dayKey);
+    }
+  });
+
   minDuration = Math.max(15, Math.floor(minDuration));
   maxDuration = Math.max(minDuration, Math.floor(maxDuration ?? minDuration));
   preferredDuration = clamp(
@@ -1017,9 +1227,32 @@ const deriveGroupConstraints = ({
     }
   });
 
+  let injectedWeekdayDays = [];
+  const hasWeekendOnlyWindows = !Array.from(allowedWindows.entries()).some(
+    ([dayKey, windows]) => WORK_DAY_SET.has(dayKey) && windows && windows.length
+  );
+
+  if (hasWeekendOnlyWindows && weekdayFallbackWindows.size) {
+    const weekdayCandidates = Array.from(weekdayFallbackWindows.entries())
+      .filter(([dayKey, windows]) => WORK_DAY_SET.has(dayKey) && windows && windows.length)
+      .sort((a, b) => a[1][0].start - b[1][0].start);
+
+    if (weekdayCandidates.length) {
+      const [dayKey, windows] = weekdayCandidates[0];
+      allowedWindows.set(dayKey, cloneWindows(windows));
+      injectedWeekdayDays = [dayKey];
+    }
+  }
+
   if (!allowedWindows.size) {
     return null;
   }
+
+  const hasWeekdayPreference =
+    allowedWeekdays.some((day) => WORK_DAY_SET.has(day)) &&
+    Array.from(allowedWindows.entries()).some(([dayKey, windows]) => {
+      return WORK_DAY_SET.has(dayKey) && windows && windows.length;
+    });
 
   const constraints = {
     allowedWeekdays,
@@ -1032,6 +1265,9 @@ const deriveGroupConstraints = ({
     timeZone: resolvedTimeZone,
     planningStart,
     planningEnd,
+    seedKey,
+    hasWeekdayPreference,
+    injectedWeekdayFallbackDays: injectedWeekdayDays,
   };
 
   return constraints;
@@ -1046,6 +1282,7 @@ export const findMutualAvailability = ({
   globalBusyIntervals = [],
   maxSuggestions = 12,
   defaultSlotDurationMinutes = DEFAULT_SLOT_MINUTES,
+  seedKey = '',
 } = {}) => {
   const planningStart = periodStart instanceof Date && !Number.isNaN(periodStart.getTime())
     ? new Date(periodStart)
@@ -1113,6 +1350,7 @@ export const findMutualAvailability = ({
     planningStart,
     planningEnd,
     defaultSlotDurationMinutes,
+    seedKey,
   });
 
   if (!constraints) {
@@ -1160,7 +1398,9 @@ export const findMutualAvailability = ({
       minDurationMinutes: constraints.minDurationMinutes,
       maxDurationMinutes: constraints.maxDurationMinutes,
     },
-    targetSuggestions * 2
+    targetSuggestions * 2,
+    seedKey,
+    planningStart
   );
 
   candidateSlots = filterSlotsBySameDayRules(candidateSlots, referenceParts, constraints.timeZone);
@@ -1174,7 +1414,29 @@ export const findMutualAvailability = ({
     constraints.maxSuggestionDaysPerWeek
   );
 
-  const finalSlots = limitedByWeek.slice(0, targetSuggestions);
+  let finalSlots = limitedByWeek.slice(0, targetSuggestions);
+
+  if (
+    constraints.hasWeekdayPreference &&
+    !finalSlots.some((slot) => WORK_DAY_SET.has(slot.dayKey))
+  ) {
+    const weekdayPool = candidateSlots.filter((slot) => WORK_DAY_SET.has(slot.dayKey));
+    if (weekdayPool.length) {
+      const replacement = weekdayPool[0];
+      const weekendIndex = finalSlots.findIndex((slot) => WEEKEND_DAY_SET.has(slot.dayKey));
+      if (weekendIndex >= 0) {
+        finalSlots = [
+          ...finalSlots.slice(0, weekendIndex),
+          replacement,
+          ...finalSlots.slice(weekendIndex + 1),
+        ].sort((a, b) => a.start.getTime() - b.start.getTime());
+      } else if (finalSlots.length < targetSuggestions) {
+        finalSlots = [...finalSlots, replacement].sort(
+          (a, b) => a.start.getTime() - b.start.getTime()
+        );
+      }
+    }
+  }
 
   return {
     slots: finalSlots,
