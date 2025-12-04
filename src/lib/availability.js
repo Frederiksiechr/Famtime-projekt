@@ -27,6 +27,7 @@ const WORK_DAY_SET = new Set(['Mon', 'Tue', 'Wed', 'Thu']);
 const WEEKEND_DAY_SET = new Set(['Fri', 'Sat', 'Sun']);
 const MAX_WEEKDAY_DURATION_MINUTES = 180;
 const MIN_WEEKEND_DURATION_MINUTES = 120;
+const MAX_WINDOW_OVERRUN_MINUTES = 30;
 
 const WEEKDAY_ORDER = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const WEEKDAY_KEY_SET = new Set(WEEKDAY_ORDER);
@@ -670,6 +671,15 @@ const getDayIdFromParts = (parts) =>
 const isSameDayParts = (a, b) =>
   a.year === b.year && a.month === b.month && a.day === b.day;
 
+const minuteOfDayFromParts = (parts) => {
+  if (!parts) {
+    return null;
+  }
+  const hours = Number.isFinite(parts.hour) ? parts.hour : 0;
+  const minutes = Number.isFinite(parts.minute) ? parts.minute : 0;
+  return hours * 60 + minutes;
+};
+
 const makeDeterministicSeed = (...parts) => {
   const input = parts
     .filter((part) => part !== undefined && part !== null)
@@ -1062,6 +1072,41 @@ const filterSlotsBySameDayRules = (slots, referenceParts, timeZone) => {
   });
 };
 
+const getWindowEndLimitForSlot = (slot, constraints) => {
+  if (!constraints?.allowedWindows?.size) {
+    return null;
+  }
+  const dayWindows = constraints.allowedWindows.get(slot.dayKey);
+  if (!dayWindows || !dayWindows.length) {
+    return null;
+  }
+  const slotParts = getZonedParts(slot.start, constraints.timeZone);
+  const slotMinute = minuteOfDayFromParts(slotParts);
+  if (!Number.isFinite(slotMinute)) {
+    return null;
+  }
+  const targetWindow = dayWindows.find((window) => slotMinute >= window.start && slotMinute < window.end);
+  if (!targetWindow) {
+    return null;
+  }
+  const dayStart = startOfDayInTimeZone(slot.start, constraints.timeZone);
+  return dayStart.getTime() + targetWindow.end * MS_PER_MINUTE;
+};
+
+const enforceWindowOverrunLimit = (slots, constraints) => {
+  if (!Array.isArray(slots) || !slots.length) {
+    return slots;
+  }
+  return slots.filter((slot) => {
+    const limit = getWindowEndLimitForSlot(slot, constraints);
+    if (!Number.isFinite(limit)) {
+      return true;
+    }
+    const allowedEndWithGrace = limit + MAX_WINDOW_OVERRUN_MINUTES * MS_PER_MINUTE;
+    return slot.end.getTime() <= allowedEndWithGrace;
+  });
+};
+
 const extractPreferencesFromEntry = (entry = {}, fallback = {}) => {
   const source = entry.preferences ?? entry;
   const group = fallback || {};
@@ -1404,6 +1449,8 @@ export const findMutualAvailability = ({
   );
 
   candidateSlots = filterSlotsBySameDayRules(candidateSlots, referenceParts, constraints.timeZone);
+
+  candidateSlots = enforceWindowOverrunLimit(candidateSlots, constraints);
 
   if (!candidateSlots.length) {
     return { slots: [], constraints };

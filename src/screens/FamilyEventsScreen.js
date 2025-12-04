@@ -43,6 +43,7 @@ const SUGGESTION_LIMIT = 6;
 const AVAILABILITY_LOOKAHEAD_DAYS = 21;
 const DEVICE_BUSY_POLL_INTERVAL_MS = 10 * 1000;
 const CALENDAR_DEVICE_LOOKAHEAD_DAYS = 21;
+const PRIVATE_EVENT_TRAVEL_BUFFER_MINUTES = 30;
 const isIOS = Platform.OS === 'ios';
 
 const isSameDay = (a, b) => {
@@ -140,6 +141,16 @@ const mergeBusyIntervals = (primary = [], secondary = []) => {
   }
 
   return merged;
+};
+
+const applyIntervalTravelBuffer = (intervals = [], bufferMinutes = 0) => {
+  const normalized = Array.isArray(intervals) ? intervals : [];
+  const bufferMs = Math.max(0, Math.floor(bufferMinutes ?? 0)) * 60 * 1000;
+
+  return normalized.map((interval) => ({
+    start: new Date(interval.start.getTime() - bufferMs),
+    end: new Date(interval.end.getTime() + bufferMs),
+  }));
 };
 
 const buildEventBusyIntervals = (events = []) => {
@@ -867,9 +878,14 @@ const FamilyEventsScreen = () => {
               .filter((interval) => Boolean(interval))
           : [];
 
+        const bufferedDeviceBusy = applyIntervalTravelBuffer(
+          deviceBusy,
+          PRIVATE_EVENT_TRAVEL_BUFFER_MINUTES
+        );
+
         setCalendarAvailability((prev) => {
           const prevEntry = prev[currentUserId] ?? { busy: { shared: [], device: [] }, preferences: {} };
-          const mergedDeviceBusy = mergeBusyIntervals(deviceBusy, []);
+          const mergedDeviceBusy = mergeBusyIntervals(bufferedDeviceBusy, []);
           const deviceChanged = !areBusyListsEqual(prevEntry.busy?.device ?? [], mergedDeviceBusy);
 
           if (!deviceChanged) {
