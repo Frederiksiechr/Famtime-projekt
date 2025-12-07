@@ -127,62 +127,21 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
     marginTop: spacing.xs,
   },
-  miniSectionHeading: {
-    alignItems: 'center',
-    gap: spacing.xs,
-    marginBottom: spacing.md,
-    paddingHorizontal: spacing.md,
-  },
-  miniSectionTitle: {
-    fontSize: fontSizes.sm,
-    fontWeight: '700',
-    color: colors.text,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  miniSectionHint: {
-    fontSize: fontSizes.xs,
-    color: colors.mutedText,
-    textAlign: 'center',
-    maxWidth: 260,
-  },
-  miniSectionMeta: {
-    fontSize: fontSizes.xs,
-    color: colors.mutedText,
-  },
   selectedTimeCard: {
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
     marginBottom: spacing.md,
-    padding: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
     borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surfaceMuted,
   },
-  selectedTimeLabel: {
-    fontSize: fontSizes.xs,
-    color: colors.mutedText,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
   selectedTimeValue: {
-    marginTop: spacing.xs,
     fontSize: fontSizes.md,
-    fontWeight: '700',
-    color: colors.text,
-    textTransform: 'capitalize',
-  },
-  selectedTimeSubValue: {
-    marginTop: 2,
-    fontSize: fontSizes.sm,
-    color: colors.text,
     fontWeight: '500',
-  },
-  selectedTimeDuration: {
-    marginTop: spacing.xs,
-    fontSize: fontSizes.xs,
-    color: colors.mutedText,
-    fontWeight: '600',
+    color: colors.text,
+    textTransform: 'none',
   },
   selectedTimePlaceholder: {
     marginTop: spacing.xs,
@@ -190,10 +149,10 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
   },
   slotScrollWrapper: {
-    marginBottom: spacing.lg,
+    marginBottom: spacing.md,
   },
   slotScrollContent: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
   slotCard: {
@@ -203,9 +162,12 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     marginRight: spacing.sm,
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   slotCardActive: {
     backgroundColor: 'rgba(230, 138, 46, 0.18)',
+    borderColor: colors.primary,
   },
   slotDate: {
     fontSize: fontSizes.sm,
@@ -225,35 +187,15 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
     fontWeight: '600',
   },
-  selectedSlotInline: {
-    marginTop: spacing.md,
-  },
-  selectedSlotLabel: {
-    fontSize: fontSizes.xs,
-    color: colors.mutedText,
-    textTransform: 'uppercase',
-    letterSpacing: 0.8,
-  },
-  selectedSlotText: {
-    marginTop: spacing.xs,
-    fontSize: fontSizes.md,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  selectedSlotDuration: {
-    marginTop: spacing.xs,
-    fontSize: fontSizes.xs,
-    color: colors.mutedText,
-  },
   moodScrollWrapper: {
-    marginTop: spacing.md,
+    marginTop: spacing.sm,
     marginBottom: spacing.lg,
   },
   moodCardsWrap: {
     flexDirection: 'row',
     alignItems: 'stretch',
     gap: spacing.sm,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.sm,
     paddingVertical: spacing.xs,
   },
   moodCard: {
@@ -269,10 +211,13 @@ const styles = StyleSheet.create({
     elevation: 2,
     minHeight: 90,
     justifyContent: 'flex-start',
+    borderWidth: 1,
+    borderColor: colors.border,
   },
   moodCardActive: {
     backgroundColor: 'rgba(230, 138, 46, 0.18)',
     shadowOpacity: 0.16,
+    borderColor: colors.primary,
   },
   moodCardHeader: {
     flexDirection: 'row',

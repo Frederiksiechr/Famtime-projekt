@@ -793,7 +793,7 @@ const AISuggestion = ({ user, onSuggestion, variant = 'card' }) => {
   const captionText = proxyUrl
     ? 'Genereres via FamTime Cloud Function (OpenAI).'
     : directApiKey
-      ? 'Genereres live via OpenAI – brugerdata sendes kun i denne forespørgsel.'
+      ? ''
       : 'Lokalt forslag. Opsæt backend-proxy for ægte AI-tekst.';
 
   const moodPicker = (
@@ -870,7 +870,9 @@ const AISuggestion = ({ user, onSuggestion, variant = 'card' }) => {
               style={styles.inlineButton}
             />
           </View>
+        {captionText ? (
           <Text style={styles.inlineCaption}>{captionText}</Text>
+        ) : null}
           <Text style={styles.inlineHint}>{moodHelperText}</Text>
           {error ? <Text style={styles.inlineError}>{error}</Text> : null}
         </View>
@@ -899,7 +901,7 @@ const AISuggestion = ({ user, onSuggestion, variant = 'card' }) => {
         </Pressable>
       </View>
 
-      <Text style={styles.caption}>{captionText}</Text>
+      {captionText ? <Text style={styles.caption}>{captionText}</Text> : null}
       <Text style={styles.moodHelper}>{moodHelperText}</Text>
 
       <Button

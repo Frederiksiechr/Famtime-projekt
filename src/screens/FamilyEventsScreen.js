@@ -18,7 +18,7 @@ import {
   AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useFocusEffect } from '@react-navigation/native';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as Calendar from 'expo-calendar';
 
 import Button from '../components/Button';
@@ -72,6 +72,13 @@ const formatDateBadge = (date) => {
     .replace('.', '');
 };
 
+const capitalizeWord = (value) => {
+  if (typeof value !== 'string' || !value.length) {
+    return '';
+  }
+  return value.charAt(0).toUpperCase() + value.slice(1);
+};
+
 const formatTimeRange = (start, end) => {
   if (!(start instanceof Date) || Number.isNaN(start.getTime())) {
     return 'Ukendt tidspunkt';
@@ -102,6 +109,31 @@ const formatTimeRange = (start, end) => {
   });
 
   return `${startLabel} -> ${endDateLabel.replace('.', '')} ${endLabel}`;
+};
+
+const formatSelectedDateLabel = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return 'Ukendt dag';
+  }
+
+  const weekday = capitalizeWord(
+    date.toLocaleDateString('da-DK', { weekday: 'long' })
+  );
+  const dayNumber = date.getDate();
+  const monthLabel = capitalizeWord(
+    date.toLocaleDateString('da-DK', { month: 'short' }).replace('.', '')
+  );
+
+  return `${weekday} ${dayNumber}. ${monthLabel}`;
+};
+
+const formatClockLabel = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return '';
+  }
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
 };
 
 const mergeBusyIntervals = (primary = [], secondary = []) => {
@@ -353,6 +385,7 @@ const formatDateTime = (date) => {
 
 const FamilyEventsScreen = () => {
   // Samler alt state omkring familiens events, forslag og kalenderintegration.
+  const navigation = useNavigation();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
@@ -457,11 +490,17 @@ const FamilyEventsScreen = () => {
     return getDurationLabel(activeSuggestion.start, activeSuggestion.end);
   }, [activeSuggestion]);
 
-  const activeTimeText = useMemo(() => {
+  const selectedTimeLine = useMemo(() => {
     if (!activeSuggestion) {
       return '';
     }
-    return formatTimeRange(activeSuggestion.start, activeSuggestion.end);
+    const dateLabel = formatSelectedDateLabel(activeSuggestion.start);
+    const startClock = formatClockLabel(activeSuggestion.start);
+    const endClock = formatClockLabel(activeSuggestion.end);
+    if (!startClock || !endClock) {
+      return dateLabel;
+    }
+    return `${dateLabel} fra ${startClock} - ${endClock}`;
   }, [activeSuggestion]);
 
   const suggestionMetaText = useMemo(() => {
@@ -532,6 +571,23 @@ const FamilyEventsScreen = () => {
       },
     ];
   }, [currentUserProfile]);
+
+  const visibleMoodCards = useMemo(
+    () => (Array.isArray(moodCards) ? moodCards.filter((card) => card.key !== 'custom') : []),
+    [moodCards]
+  );
+
+  const moodMetaText = useMemo(() => {
+    const total = visibleMoodCards.length;
+    if (!total) {
+      return '';
+    }
+    const index = visibleMoodCards.findIndex((card) => card.key === activeMoodKey);
+    if (index === -1) {
+      return '';
+    }
+    return `Forslag ${index + 1} af ${total}`;
+  }, [visibleMoodCards, activeMoodKey]);
 
   const ensureValidEnd = (start, end) => {
     if (!end || end <= start) {
@@ -1223,12 +1279,14 @@ const FamilyEventsScreen = () => {
       setActiveMoodKey(null);
       setMoodDraftTitle('');
       setMoodDraftDescription('');
+      navigation.navigate('OwnCalendar');
     }
   }, [
     activeSuggestion,
     moodDraftTitle,
     moodDraftDescription,
     handleSubmitEvent,
+    navigation,
   ]);
 
   const handleCloseMoodPreview = useCallback(() => {
@@ -2047,112 +2105,123 @@ const initializeCalendarContext = useCallback(
 
               {!infoMessage ? (
                 <>
-                  <View style={styles.miniSectionHeading}>
-                    <Text style={styles.miniSectionTitle}>Foreslået tidspunkter</Text>
-                    <Text style={styles.miniSectionHint}>
-                      Vælg tidspunkt for familieaftalen
-                    </Text>
-                    {suggestionMetaText ? (
-                      <Text style={styles.miniSectionMeta}>{suggestionMetaText}</Text>
-                    ) : null}
+                  <View style={styles.sectionCard}>
+                    <View style={styles.sectionHeader}>
+                      <View style={styles.sectionTitleRow}>
+                        <Text style={styles.sectionTitle}>Foreslået tidspunkter</Text>
+                        {suggestionMetaText ? (
+                          <Text style={styles.sectionMeta}>{suggestionMetaText}</Text>
+                        ) : null}
+                      </View>
+                      <Text style={styles.sectionHint}>
+                        Vælg tidspunkt for familieaftalen
+                      </Text>
+                    </View>
+
+                    {sortedSuggestions.length ? (
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.slotScrollWrapper}
+                        contentContainerStyle={styles.slotScrollContent}
+                      >
+                        {sortedSuggestions.map((suggestion) => {
+                          const isActive =
+                            activeSuggestion && suggestion.id === activeSuggestion.id;
+                          return (
+                            <Pressable
+                              key={suggestion.id}
+                              onPress={() => handleSelectSuggestion(suggestion)}
+                              style={[
+                                styles.slotCard,
+                                isActive ? styles.slotCardActive : null,
+                              ]}
+                              accessibilityRole="button"
+                              accessibilityState={{ selected: isActive }}
+                              accessibilityLabel={`Ledig dato ${formatDateBadge(
+                                suggestion.start
+                              )}`}
+                            >
+                              <Text style={styles.slotDate}>
+                                {formatDateBadge(suggestion.start)}
+                              </Text>
+                              <Text style={styles.slotTime}>
+                                {formatTimeRange(suggestion.start, suggestion.end)}
+                              </Text>
+                              {isActive && activeDurationLabel ? (
+                                <Text style={styles.slotDuration}>{activeDurationLabel}</Text>
+                              ) : null}
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
+                    ) : (
+                      <Text style={styles.suggestionEmptyText}>
+                        Ingen ledige datoer fundet endnu. Opdater familiepræferencer
+                        under Konto → Opdater profil.
+                      </Text>
+                    )}
                   </View>
 
-                  {sortedSuggestions.length ? (
+                  <View style={styles.sectionCard}>
+                    <View style={styles.sectionHeader}>
+                      <View style={styles.sectionTitleRow}>
+                        <Text style={styles.sectionTitle}>humørkort</Text>
+                        {moodMetaText ? (
+                          <Text style={styles.sectionMeta}>{moodMetaText}</Text>
+                        ) : null}
+                      </View>
+                      <Text style={styles.sectionHint}>
+                        Vælg stemningen for aftalen. Tryk på øjet for at læse mere.
+                      </Text>
+                    </View>
+
                     <ScrollView
                       horizontal
                       showsHorizontalScrollIndicator={false}
-                      style={styles.slotScrollWrapper}
-                      contentContainerStyle={styles.slotScrollContent}
+                      style={styles.moodScrollWrapper}
+                      contentContainerStyle={styles.moodCardsWrap}
                     >
-                      {sortedSuggestions.map((suggestion) => {
-                        const isActive =
-                          activeSuggestion && suggestion.id === activeSuggestion.id;
+                      {moodCards.map((mood) => {
+                        const isActiveMood = activeMoodKey === mood.key;
                         return (
                           <Pressable
-                            key={suggestion.id}
-                            onPress={() => handleSelectSuggestion(suggestion)}
+                            key={mood.key}
+                            onPress={() => handleSelectMoodCard(mood)}
                             style={[
-                              styles.slotCard,
-                              isActive ? styles.slotCardActive : null,
+                              styles.moodCard,
+                              isActiveMood ? styles.moodCardActive : null,
                             ]}
                             accessibilityRole="button"
-                            accessibilityState={{ selected: isActive }}
-                            accessibilityLabel={`Ledig dato ${formatDateBadge(
-                              suggestion.start
-                            )}`}
+                            accessibilityState={{ selected: isActiveMood }}
+                            accessibilityLabel={`humørkort ${mood.label}`}
                           >
-                            <Text style={styles.slotDate}>
-                              {formatDateBadge(suggestion.start)}
-                            </Text>
-                            <Text style={styles.slotTime}>
-                              {formatTimeRange(suggestion.start, suggestion.end)}
-                            </Text>
-                            {isActive && activeDurationLabel ? (
-                              <Text style={styles.slotDuration}>{activeDurationLabel}</Text>
+                            <View style={styles.moodCardHeader}>
+                              <Text style={styles.moodCardLabel}>{mood.label}</Text>
+                              <Pressable
+                                onPress={() => setMoodPreview(mood)}
+                                hitSlop={12}
+                                accessibilityRole="button"
+                                accessibilityLabel={`Vis detaljer for ${mood.label}`}
+                                style={styles.moodCardEyeButton}
+                              >
+                                <Ionicons
+                                  name="eye-outline"
+                                  style={[
+                                    styles.moodCardIcon,
+                                    isActiveMood ? styles.moodCardIconActive : null,
+                                  ]}
+                                />
+                              </Pressable>
+                            </View>
+                            {mood.helper ? (
+                              <Text style={styles.moodCardCategory}>{mood.helper}</Text>
                             ) : null}
                           </Pressable>
                         );
                       })}
                     </ScrollView>
-                  ) : (
-                    <Text style={styles.suggestionEmptyText}>
-                      Ingen ledige datoer fundet endnu. Opdater familiepræferencer
-                      under Konto → Opdater profil.
-                    </Text>
-                  )}
-
-                  <View style={styles.miniSectionHeading}>
-                    <Text style={styles.miniSectionTitle}>humørkort</Text>
-                    <Text style={styles.miniSectionHint}>
-                      Vælg stemningen for aftalen. Tryk på øjet for at læse mere.
-                    </Text>
                   </View>
-
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    style={styles.moodScrollWrapper}
-                    contentContainerStyle={styles.moodCardsWrap}
-                  >
-                    {moodCards.map((mood) => {
-                      const isActiveMood = activeMoodKey === mood.key;
-                      return (
-                        <Pressable
-                          key={mood.key}
-                          onPress={() => handleSelectMoodCard(mood)}
-                          style={[
-                            styles.moodCard,
-                            isActiveMood ? styles.moodCardActive : null,
-                          ]}
-                          accessibilityRole="button"
-                          accessibilityState={{ selected: isActiveMood }}
-                          accessibilityLabel={`humørkort ${mood.label}`}
-                        >
-                          <View style={styles.moodCardHeader}>
-                            <Text style={styles.moodCardLabel}>{mood.label}</Text>
-                            <Pressable
-                              onPress={() => setMoodPreview(mood)}
-                              hitSlop={12}
-                              accessibilityRole="button"
-                              accessibilityLabel={`Vis detaljer for ${mood.label}`}
-                              style={styles.moodCardEyeButton}
-                            >
-                              <Ionicons
-                                name="eye-outline"
-                                style={[
-                                  styles.moodCardIcon,
-                                  isActiveMood ? styles.moodCardIconActive : null,
-                                ]}
-                              />
-                            </Pressable>
-                          </View>
-                          {mood.helper ? (
-                            <Text style={styles.moodCardCategory}>{mood.helper}</Text>
-                          ) : null}
-                        </Pressable>
-                      );
-                    })}
-                  </ScrollView>
 
                   {activeMoodKey ? (
                     <View style={[styles.sectionCard, styles.moodEditorCard]}>
@@ -2160,18 +2229,12 @@ const initializeCalendarContext = useCallback(
                       <Text style={styles.moodEditorHint}>
                         Rediger titel og beskrivelse, eller generér en ny tekst baseret på humøret.
                       </Text>
+                      <Text style={styles.moodEditorLabel}>Tidspunkt</Text>
                       <View style={styles.selectedTimeCard}>
-                        <Text style={styles.selectedTimeLabel}>Tidspunkt</Text>
-                        {activeSuggestion ? (
-                          <>
-                            <Text style={styles.selectedTimeValue}>
-                              {formatDateBadge(activeSuggestion.start)}
-                            </Text>
-                            <Text style={styles.selectedTimeSubValue}>{activeTimeText}</Text>
-                            {activeDurationLabel ? (
-                              <Text style={styles.selectedTimeDuration}>{activeDurationLabel}</Text>
-                            ) : null}
-                          </>
+                        {selectedTimeLine ? (
+                          <Text style={styles.selectedTimeValue} numberOfLines={1}>
+                            {selectedTimeLine}
+                          </Text>
                         ) : (
                           <Text style={styles.selectedTimePlaceholder}>
                             Vælg tidspunkt for familieaftalen.
@@ -2224,10 +2287,6 @@ const initializeCalendarContext = useCallback(
                   )}
                 </>
               ) : null}
-              <Text style={styles.helperText}>
-                Når begivenheden er oprettet, vises den under &quot;Min kalender&quot;,
-                hvor alle familiemedlemmer kan godkende eller foreslå ændringer.
-              </Text>
             </View>
             ) : null}
           </View>
