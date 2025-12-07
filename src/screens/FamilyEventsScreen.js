@@ -393,7 +393,6 @@ const FamilyEventsScreen = () => {
   const [familyName, setFamilyName] = useState('');
   const [confirmedEvents, setConfirmedEvents] = useState([]);
   const [pendingEvents, setPendingEvents] = useState([]);
-  const [actionStatus, setActionStatus] = useState('');
   const [formVisible, setFormVisible] = useState(false);
   const [formData, setFormData] = useState(createDefaultEventState);
   const [formError, setFormError] = useState('');
@@ -435,8 +434,7 @@ const FamilyEventsScreen = () => {
     setDeviceBusyRefreshToken((token) => token + 1);
   }, []);
   const appStateRef = useRef(AppState.currentState);
-  const shouldShowStatusCard =
-    Boolean(error) || Boolean(actionStatus) || Boolean(infoMessage) || loading;
+  const shouldShowStatusCard = Boolean(error) || Boolean(infoMessage) || loading;
 
   const sortedSuggestions = useMemo(() => {
     if (!Array.isArray(suggestions) || !suggestions.length) {
@@ -1435,7 +1433,6 @@ const initializeCalendarContext = useCallback(
 
     setFormSaving(true);
     setFormError('');
-    setActionStatus('');
 
     const normalizedDescription = (data.description ?? '').trim();
 
@@ -1502,12 +1499,6 @@ const initializeCalendarContext = useCallback(
         .doc(familyId)
         .collection('events')
         .add(createPayload);
-
-      setActionStatus(
-        pendingApprovals.length === 0
-          ? 'Begivenhed oprettet og automatisk godkendt.'
-          : 'Begivenhed oprettet og afventer godkendelser.'
-      );
 
       handleCloseForm();
       requestDeviceBusyRefresh();
@@ -2084,19 +2075,11 @@ const initializeCalendarContext = useCallback(
               {shouldShowStatusCard ? (
                 <View style={styles.sectionCard}>
                   <ErrorMessage message={error} />
-
-                  {actionStatus ? (
-                    <View style={styles.statusPill}>
-                      <Text style={styles.statusText}>{actionStatus}</Text>
-                    </View>
-                  ) : null}
-
                   {infoMessage ? (
                     <View style={styles.infoPill}>
                       <Text style={styles.infoText}>{infoMessage}</Text>
                     </View>
                   ) : null}
-
                   {loading ? (
                     <Text style={styles.infoText}>Indlæser familiens kalender.</Text>
                   ) : null}
