@@ -425,6 +425,7 @@ const FamilyEventsScreen = () => {
   const currentUserEmail = auth.currentUser?.email?.toLowerCase() ?? '';
   const [currentUserProfile, setCurrentUserProfile] = useState(null);
   const [activeMoodKey, setActiveMoodKey] = useState(null);
+  const [moodVariantSeed, setMoodVariantSeed] = useState('');
   const [moodDraftTitle, setMoodDraftTitle] = useState('');
   const [moodDraftDescription, setMoodDraftDescription] = useState('');
   const [moodPreview, setMoodPreview] = useState(null);
@@ -1209,22 +1210,32 @@ const FamilyEventsScreen = () => {
         return;
       }
 
-      if (activeMoodKey === mood.key) {
-        return;
-      }
+      const nextVariantSeed =
+        mood.key === 'custom'
+          ? ''
+          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      setMoodVariantSeed(nextVariantSeed);
 
       const defaultTitle =
         mood.key === 'custom' ? '' : `Familietid - ${mood.label}`;
+      const hasProfile =
+        currentUserProfile && Object.keys(currentUserProfile).length > 0;
       const defaultDescription =
         mood.key === 'custom'
           ? ''
-          : mood.summary || mood.description || '';
+          : hasProfile
+            ? generateProfileSuggestion(currentUserProfile, mood.key, {
+                variantSeed: nextVariantSeed,
+              })
+            : mood.summary || mood.description || '';
 
-      setActiveMoodKey(mood.key);
+      if (activeMoodKey !== mood.key) {
+        setActiveMoodKey(mood.key);
+      }
       setMoodDraftTitle(defaultTitle);
       setMoodDraftDescription(defaultDescription);
     },
-    [activeMoodKey]
+    [activeMoodKey, currentUserProfile]
   );
 
   const handleChangeMoodTitle = useCallback((text) => {
@@ -1239,6 +1250,15 @@ const FamilyEventsScreen = () => {
     const nextText = typeof text === 'string' ? text : '';
     setMoodDraftDescription(nextText);
   }, []);
+
+  const aiMoodKey = useMemo(() => {
+    if (!activeMoodKey) {
+      return null;
+    }
+    return MOOD_OPTIONS.some((option) => option.key === activeMoodKey)
+      ? activeMoodKey
+      : null;
+  }, [activeMoodKey]);
 
   const handlePlanFromMood = useCallback(async () => {
     if (!activeSuggestion) {
@@ -2244,11 +2264,13 @@ const initializeCalendarContext = useCallback(
 
                       <ErrorMessage message={formError} />
 
-                      {activeSuggestion && currentUserProfile ? (
+                      {activeSuggestion && currentUserProfile && aiMoodKey ? (
                         <View style={styles.aiBlock}>
                           <AISuggestion
                             user={currentUserProfile}
                             variant="inline"
+                            moodKey={aiMoodKey}
+                            variantSeed={moodVariantSeed}
                             onSuggestion={handleApplyAISuggestion}
                           />
                         </View>

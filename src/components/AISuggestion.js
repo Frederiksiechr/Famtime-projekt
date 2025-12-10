@@ -18,6 +18,13 @@ import Constants from 'expo-constants';
 import Button from './Button';
 import { auth } from '../lib/firebase';
 import styles from '../styles/components/AISuggestionStyles';
+import {
+  WEEKDAY_ACTIVITIES,
+  WEEKEND_ACTIVITIES,
+  MOOD_OPTIONS,
+  MOOD_TONE_MAP,
+} from '../data/activityCatalog';
+export { MOOD_OPTIONS };
 
 const DAY_LABELS = {
   monday: 'Mandag',
@@ -41,195 +48,7 @@ const DAY_ORDER = [
 
 const WEEKEND_KEYS = ['friday', 'saturday', 'sunday'];
 
-const WEEKDAY_ACTIVITIES = [
-  {
-    key: 'coffee_walk',
-    label: 'Kaffemøde & gåtur',
-    detail: '(45–60 minutter, uformelt)',
-    tone: 'adult',
-    moods: ['balanced', 'relaxed'],
-  },
-  {
-    key: 'boardgames_tea',
-    label: 'Brætspil & te',
-    detail: '(hyggeligt og afslappet)',
-    tone: 'neutral',
-    moods: ['balanced', 'relaxed', 'creative'],
-  },
-  {
-    key: 'museum_short',
-    label: 'Museumsbesøg (kort)',
-    detail: '(kulturpause på 1–2 timer)',
-    tone: 'adult',
-    moods: ['balanced', 'creative'],
-  },
-  {
-    key: 'weekday_cinema',
-    label: 'Bio – hverdagsvisning',
-    detail: '(rolig sal og gode billetter)',
-    tone: 'youth',
-    moods: ['balanced', 'energetic', 'adventurous'],
-  },
-  {
-    key: 'ceramic_paint_studio',
-    label: 'Keramikmaling hos værksted',
-    detail: '(mal kopper eller skåle i 2 timer)',
-    tone: 'neutral',
-    moods: ['creative'],
-  },
-  {
-    key: 'plant_pot_lab',
-    label: 'Potteplanter & maling',
-    detail: '(hjemmeprojekt med pensler og planter)',
-    tone: 'neutral',
-    moods: ['creative', 'relaxed'],
-  },
-  {
-    key: 'makerspace_dropin',
-    label: 'Makerspace drop-in',
-    detail: '(3D-print, laserskæring eller tekstil)',
-    tone: 'adult',
-    moods: ['creative', 'adventurous'],
-  },
-  {
-    key: 'lyric_cafe',
-    label: 'Lyrik & latte',
-    detail: '(åben mic og notesbøger)',
-    tone: 'neutral',
-    moods: ['creative', 'balanced'],
-  },
-];
-
-const WEEKEND_ACTIVITIES = [
-  {
-    key: 'brunch_walk',
-    label: 'Brunch & gåtur',
-    detail: '(1–2 timer, lavt budget)',
-    tone: 'adult',
-    moods: ['balanced', 'relaxed'],
-  },
-  {
-    key: 'streetfood_market',
-    label: 'Streetfood-marked',
-    detail: '(god energi og masser at smage)',
-    tone: 'youth',
-    moods: ['balanced', 'energetic', 'adventurous'],
-  },
-  {
-    key: 'picnic_park',
-    label: 'Picnic i park',
-    detail: '(afslappet og familievenligt)',
-    tone: 'neutral',
-    moods: ['balanced', 'relaxed', 'creative'],
-  },
-  {
-    key: 'climbing_gym',
-    label: 'Klatrehal/aktivitetscenter',
-    detail: '(energi og grin for alle)',
-    tone: 'youth',
-    moods: ['energetic', 'adventurous'],
-  },
-  {
-    key: 'evening_cinema',
-    label: 'Aftenbio & dessert',
-    detail: '(klassiker med forkælelse)',
-    tone: 'adult',
-    moods: ['balanced', 'relaxed'],
-  },
-  {
-    key: 'pottery_weekend',
-    label: 'Keramikworkshop',
-    detail: '(drej, mal og glasér sammen)',
-    tone: 'neutral',
-    moods: ['creative'],
-  },
-  {
-    key: 'art_lab_pop_up',
-    label: 'Pop-up kunstværksted',
-    detail: '(mal lærreder eller totebags)',
-    tone: 'youth',
-    moods: ['creative', 'adventurous'],
-  },
-  {
-    key: 'gallery_crawl',
-    label: 'Galleri-hop',
-    detail: '(små udstillinger med kaffe undervejs)',
-    tone: 'adult',
-    moods: ['creative', 'balanced'],
-  },
-  {
-    key: 'forest_photo_walk',
-    label: 'Foto- og skovtur',
-    detail: '(kamera, picnic og natur)',
-    tone: 'neutral',
-    moods: ['creative', 'relaxed'],
-  },
-];
-
-export const MOOD_OPTIONS = [
-  {
-    key: 'balanced',
-    label: 'Balanceret',
-    description: 'Et åbent sind for både rolige og aktive forslag.',
-    activityLead: 'Evt.',
-    leads: ['Evt.', 'Prøv', 'Et bud:'],
-    nuancePool: ['både ro og energi', 'passer alle aldre', 'fleksibel stemning'],
-    prompt:
-      'familien er i et balanceret humør og er åben for flere slags aktiviteter',
-    helper: 'Standardvalg – giver alsidige forslag.',
-  },
-  {
-    key: 'relaxed',
-    label: 'Afslappet',
-    description: 'Roligt tempo og plads til hygge.',
-    activityLead: 'Roligt bud:',
-    leads: ['Roligt bud:', 'Hygge-tip:', 'Langsomt tempo:'],
-    nuancePool: ['lavt tempo', 'tid til hygge', 'rolig stemning'],
-    prompt: 'familien er i afslappet humør og ønsker lave tempo og hygge',
-    helper: 'Foreslår rolige aktiviteter.',
-  },
-  {
-    key: 'energetic',
-    label: 'Energisk',
-    description: 'Høj puls og grin på programmet.',
-    activityLead: 'Full energi:',
-    leads: ['Full energi:', 'Højt gear:', 'Turbo-tip:'],
-    nuancePool: ['giver høj puls', 'masser af energi', 'klar til grin'],
-    prompt: 'familien er fuld af energi og søger en aktiv oplevelse',
-    helper: 'Gode til bevægelse og aktivitet.',
-  },
-  {
-    key: 'adventurous',
-    label: 'Eventyrlysten',
-    description: 'Klar på at prøve noget nyt.',
-    activityLead: 'Lille eventyr:',
-    leads: ['Lille eventyr:', 'Ny oplevelse:', 'Modigt bud:'],
-    nuancePool: ['nyt at opdage', 'småt eventyr', 'overrask jer selv'],
-    prompt: 'familien er eventyrlysten og vil gerne prøve noget nyt',
-    helper: 'Til jer der vil opleve nye steder.',
-  },
-  {
-    key: 'creative',
-    label: 'Kreativ',
-    description: 'Tid til projekter og fordybelse.',
-    activityLead: 'Kreativt bud:',
-    leads: ['Kreativt bud:', 'Skab-selv:', 'Idéværksted:'],
-    nuancePool: ['plads til idéer', 'rolig fordybelse', 'fælles projekt'],
-    prompt:
-      'familien er i kreativt humør og ønsker en aktivitet med fordybelse',
-    helper: 'Forslag med plads til kreativitet.',
-  },
-];
-
 const DEFAULT_MOOD_KEY = MOOD_OPTIONS[0].key;
-
-const MOOD_TONE_MAP = {
-  balanced: [],
-  relaxed: ['neutral', 'adult'],
-  energetic: ['youth'],
-  adventurous: ['youth', 'neutral'],
-  creative: ['neutral', 'adult'],
-};
 
 const DAY_PREFIX_VARIANTS = {
   withDay: [
@@ -400,8 +219,11 @@ const pickActivity = (hashSeed, isWeekend, age, moodKey = DEFAULT_MOOD_KEY) => {
 
 export const generateProfileSuggestion = (
   user = {},
-  moodKey = DEFAULT_MOOD_KEY
+  moodKey = DEFAULT_MOOD_KEY,
+  options = {}
 ) => {
+  const variantSeed =
+    options && typeof options === 'object' ? options.variantSeed : null;
   const name = sanitizeString(user.name);
   const city = sanitizeString(user.city);
   const gender = sanitizeString(user.gender);
@@ -412,13 +234,16 @@ export const generateProfileSuggestion = (
   const moodConfig =
     MOOD_OPTIONS.find((option) => option.key === moodKey) ?? MOOD_OPTIONS[0];
 
-  const hashSeed = [
+  const baseHashSeed = [
     name || DEFAULT_NAME,
     Number.isFinite(age) ? age : 'na',
     city || 'nocity',
     preferredDays.join('-') || 'nodays',
     moodConfig.key,
   ].join('|');
+  const hashSeed = variantSeed
+    ? `${baseHashSeed}|variant:${variantSeed}`
+    : baseHashSeed;
 
   const selectedDay = pickDay(hashSeed, preferredDays);
   const isWeekend =
@@ -469,35 +294,65 @@ const toLabel = (dayKey) => {
   return DAY_LABELS[key] ?? key;
 };
 
-const AISuggestion = ({ user, onSuggestion, variant = 'card' }) => {
+const normalizeMoodKey = (value) => {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  const trimmed = value.trim().toLowerCase();
+  return MOOD_OPTIONS.some((option) => option.key === trimmed)
+    ? trimmed
+    : null;
+};
+
+const AISuggestion = ({
+  user,
+  onSuggestion,
+  variant = 'card',
+  moodKey: externalMoodKeyProp = null,
+  variantSeed: externalVariantSeed = null,
+}) => {
   const isInline = variant === 'inline';
-  const [mood, setMood] = useState(DEFAULT_MOOD_KEY);
+  const externalMoodKey = normalizeMoodKey(externalMoodKeyProp);
+  const isMoodControlled = Boolean(externalMoodKey);
+  const [internalMood, setInternalMood] = useState(
+    externalMoodKey ?? DEFAULT_MOOD_KEY
+  );
+  const resolvedMoodKey = isMoodControlled ? externalMoodKey : internalMood;
+  const fallbackVariantSeed = externalVariantSeed ?? '';
   const [moodPickerVisible, setMoodPickerVisible] = useState(false);
   const [suggestion, setSuggestion] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [hasGenerated, setHasGenerated] = useState(false);
-  const currentMoodRef = useRef(DEFAULT_MOOD_KEY);
+  const currentMoodRef = useRef(resolvedMoodKey);
 
   const selectedMood = useMemo(() => {
     return (
-      MOOD_OPTIONS.find((option) => option.key === mood) ?? MOOD_OPTIONS[0]
+      MOOD_OPTIONS.find((option) => option.key === resolvedMoodKey) ??
+      MOOD_OPTIONS[0]
     );
-  }, [mood]);
+  }, [resolvedMoodKey]);
   const moodHelperText = selectedMood.helper ?? 'Humør påvirker næste forslag.';
+  const allowMoodSelection = !isMoodControlled;
 
   const handleOpenMoodPicker = useCallback(() => {
+    if (!allowMoodSelection) {
+      return;
+    }
     setMoodPickerVisible(true);
-  }, []);
+  }, [allowMoodSelection]);
 
   const handleCloseMoodPicker = useCallback(() => {
     setMoodPickerVisible(false);
   }, []);
 
   const handleSelectMood = useCallback((nextMoodKey) => {
-    setMood(nextMoodKey);
+    if (!allowMoodSelection) {
+      return;
+    }
+    setInternalMood(nextMoodKey);
     setMoodPickerVisible(false);
-  }, []);
+  }, [allowMoodSelection]);
 
   const extra = useMemo(() => getExpoExtra(), []);
   const directApiKey = sanitizeString(extra.openaiApiKey);
@@ -508,7 +363,7 @@ const AISuggestion = ({ user, onSuggestion, variant = 'card' }) => {
     setHasGenerated(false);
     setSuggestion('');
     setError('');
-  }, [mood]);
+  }, [resolvedMoodKey]);
 
   useEffect(() => {
     currentMoodRef.current = selectedMood.key;
@@ -568,9 +423,10 @@ const AISuggestion = ({ user, onSuggestion, variant = 'card' }) => {
           gender: profile.gender,
           preferredDays: profile.preferredDays,
         },
-        selectedMood.key
+        selectedMood.key,
+        { variantSeed: fallbackVariantSeed }
       ),
-    [profile, selectedMood.key]
+    [profile, selectedMood.key, fallbackVariantSeed]
   );
 
   const applySuggestion = useCallback(
@@ -652,16 +508,26 @@ const AISuggestion = ({ user, onSuggestion, variant = 'card' }) => {
     setError('');
     setSuggestion('');
     const requestMoodKey = selectedMood.key;
+    console.log('[AISuggestion] handleGenerate', {
+      mood: requestMoodKey,
+      usingProxy: Boolean(proxyUrl),
+      hasDirectKey: Boolean(directApiKey),
+    });
 
     if (proxyUrl) {
       const currentUser = auth.currentUser;
       if (!currentUser) {
+        console.log('[AISuggestion] proxy flow blocked - user not logged in');
         applySuggestion(fallbackSuggestion);
         setError('Log ind for at hente AI-forslag. Viser lokalt bud.');
         return;
       }
 
       setLoading(true);
+      console.log('[AISuggestion] proxy flow - sending request', {
+        mood: selectedMood.key,
+        hasPreferredDays: profile.preferredDays.length > 0,
+      });
       try {
         const idToken = await currentUser.getIdToken();
         const response = await fetch(proxyUrl, {
@@ -697,6 +563,9 @@ const AISuggestion = ({ user, onSuggestion, variant = 'card' }) => {
 
         const data = await response.json();
         const text = sanitizeString(data?.suggestion);
+        console.log('[AISuggestion] proxy flow response', {
+          hasSuggestion: Boolean(text),
+        });
 
         if (!text) {
           throw new Error('Tomt svar fra proxy.');
@@ -722,6 +591,7 @@ const AISuggestion = ({ user, onSuggestion, variant = 'card' }) => {
     }
 
     if (!directApiKey) {
+      console.log('[AISuggestion] falling back - no OpenAI API key configured');
       applySuggestion(fallbackSuggestion);
       setError(
         'Opsæt OPENAI_PROXY_URL eller backend-proxy for ægte AI-forslag. Viser lokalt bud.'
@@ -730,6 +600,9 @@ const AISuggestion = ({ user, onSuggestion, variant = 'card' }) => {
     }
 
     setLoading(true);
+    console.log('[AISuggestion] direct OpenAI flow - sending request', {
+      model: directModel,
+    });
     try {
       const response = await fetch(
         'https://api.openai.com/v1/chat/completions',
@@ -754,6 +627,9 @@ const AISuggestion = ({ user, onSuggestion, variant = 'card' }) => {
       const text =
         data?.choices?.[0]?.message?.content?.trim() ||
         data?.choices?.[0]?.text?.trim();
+      console.log('[AISuggestion] direct OpenAI flow response', {
+        hasSuggestion: Boolean(text),
+      });
 
       if (!text) {
         throw new Error('Tomt svar fra OpenAI.');
@@ -796,7 +672,7 @@ const AISuggestion = ({ user, onSuggestion, variant = 'card' }) => {
       ? ''
       : 'Lokalt forslag. Opsæt backend-proxy for ægte AI-tekst.';
 
-  const moodPicker = (
+  const moodPicker = !allowMoodSelection ? null : (
     <Modal
       transparent
       animationType="fade"
@@ -848,21 +724,25 @@ const AISuggestion = ({ user, onSuggestion, variant = 'card' }) => {
       <>
         <View style={styles.inlineContainer}>
           <View style={styles.inlineControls}>
-            <Pressable
-              onPress={handleOpenMoodPicker}
-              disabled={loading}
-              accessibilityRole="button"
-              accessibilityLabel="Vælg humør til forslaget"
-              style={({ pressed }) => [
-                styles.moodSelector,
-                styles.inlineMoodSelector,
-                pressed && !loading ? styles.moodSelectorPressed : null,
-                loading ? styles.moodSelectorDisabled : null,
-              ]}
-            >
-              <Text style={styles.moodSelectorLabel}>{selectedMood.label}</Text>
-              <Text style={styles.moodSelectorIcon}>v</Text>
-            </Pressable>
+            {allowMoodSelection ? (
+              <Pressable
+                onPress={handleOpenMoodPicker}
+                disabled={loading}
+                accessibilityRole="button"
+                accessibilityLabel="Vælg humør til forslaget"
+                style={({ pressed }) => [
+                  styles.moodSelector,
+                  styles.inlineMoodSelector,
+                  pressed && !loading ? styles.moodSelectorPressed : null,
+                  loading ? styles.moodSelectorDisabled : null,
+                ]}
+              >
+                <Text style={styles.moodSelectorLabel}>
+                  {selectedMood.label}
+                </Text>
+                <Text style={styles.moodSelectorIcon}>v</Text>
+              </Pressable>
+            ) : null}
             <Button
               title={loading ? 'Henter forslag…' : 'Generer AI-forslag'}
               onPress={handleGenerate}
@@ -885,20 +765,28 @@ const AISuggestion = ({ user, onSuggestion, variant = 'card' }) => {
     <View style={styles.container}>
       <View style={styles.headerRow}>
         <Text style={styles.heading}>FamTime forslag (AI)</Text>
-        <Pressable
-          onPress={handleOpenMoodPicker}
-          disabled={loading}
-          accessibilityRole="button"
-          accessibilityLabel="Vælg humør til forslaget"
-          style={({ pressed }) => [
-            styles.moodSelector,
-            pressed && !loading ? styles.moodSelectorPressed : null,
-            loading ? styles.moodSelectorDisabled : null,
-          ]}
-        >
-          <Text style={styles.moodSelectorLabel}>{selectedMood.label}</Text>
-          <Text style={styles.moodSelectorIcon}>v</Text>
-        </Pressable>
+        {allowMoodSelection ? (
+          <Pressable
+            onPress={handleOpenMoodPicker}
+            disabled={loading}
+            accessibilityRole="button"
+            accessibilityLabel="Vælg humør til forslaget"
+            style={({ pressed }) => [
+              styles.moodSelector,
+              pressed && !loading ? styles.moodSelectorPressed : null,
+              loading ? styles.moodSelectorDisabled : null,
+            ]}
+          >
+            <Text style={styles.moodSelectorLabel}>
+              {selectedMood.label}
+            </Text>
+            <Text style={styles.moodSelectorIcon}>v</Text>
+          </Pressable>
+        ) : (
+          <View style={[styles.moodSelector, styles.moodSelectorDisabled]}>
+            <Text style={styles.moodSelectorLabel}>{selectedMood.label}</Text>
+          </View>
+        )}
       </View>
 
       {captionText ? <Text style={styles.caption}>{captionText}</Text> : null}
