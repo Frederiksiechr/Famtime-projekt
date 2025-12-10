@@ -5,7 +5,7 @@
  * - Lader brugeren godkende eller afvise forslag samt foreslå nye ændringer.
  * - Alt data hentes fra Firestore - ingen direkte manipulation af Apple-kalenderen her.
  */
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -16,9 +16,11 @@ import {
   Pressable,
   Platform,
   KeyboardAvoidingView,
+  AppState,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import * as Calendar from 'expo-calendar';
 
 import Button from '../components/Button';
 import ErrorMessage from '../components/ErrorMessage';
@@ -26,8 +28,96 @@ import { auth, db, firebase } from '../lib/firebase';
 import { Ionicons } from '@expo/vector-icons';
 import { DEFAULT_AVATAR_EMOJI } from '../constants/avatarEmojis';
 import styles from '../styles/screens/OwnCalendarScreenStyles';
+import { colors } from '../styles/theme';
+import findMutualAvailability, { availabilityUtils } from '../lib/availability';
+import useActivityPool from '../hooks/useActivityPool';
+import {
+  applyIntervalTravelBuffer,
+  areBusyListsEqual,
+  buildEventBusyIntervals,
+  extractPreferencesFromCalendarDoc,
+  mergeBusyIntervals,
+  normalizeBusyPayload,
+  shallowEqualObjects,
+} from '../utils/calendarAvailability';
+import { simpleHash } from '../utils/activityHelpers';
+import {
+  FAMILY_PREFERENCE_MODES,
+  normalizeFamilyPreferenceMode,
+} from '../constants/familyPreferenceModes';
 
 const isIOS = Platform.OS === 'ios';
+const DEFAULT_EVENT_DURATION_MINUTES = 60;
+const AVAILABILITY_LOOKAHEAD_DAYS = 21;
+const AUTO_SUGGESTION_VISIBLE = 3;
+const AUTO_SUGGESTION_QUEUE_LIMIT = 12;
+const PRIVATE_EVENT_TRAVEL_BUFFER_MINUTES = 30;
+const DEVICE_BUSY_POLL_INTERVAL_MS = 10 * 1000;
+const REMOTE_ACTIVITY_WEIGHT = 0.6;
+
+const SECTION_VARIANTS = {
+  default: {
+    cardBg: colors.surface,
+    borderColor: colors.border,
+    badgeBg: colors.surfaceMuted,
+    badgeBorderColor: colors.border,
+    badgeText: colors.text,
+    dividerColor: colors.border,
+    hintText: colors.mutedText,
+  },
+  review: {
+    cardBg: '#FFF0E8',
+    borderColor: '#F5C1A1',
+    badgeBg: 'rgba(209, 67, 36, 0.15)',
+    badgeBorderColor: 'rgba(209, 67, 36, 0.35)',
+    badgeText: colors.error,
+    dividerColor: 'rgba(209, 67, 36, 0.4)',
+    hintText: colors.error,
+  },
+  ideas: {
+    cardBg: '#FFF9ED',
+    borderColor: '#F1D49C',
+    badgeBg: 'rgba(230, 138, 46, 0.18)',
+    badgeBorderColor: 'rgba(182, 100, 20, 0.4)',
+    badgeText: colors.primaryDark,
+    dividerColor: 'rgba(182, 100, 20, 0.45)',
+    hintText: colors.primaryDark,
+  },
+  waiting: {
+    cardBg: '#F9F4EE',
+    borderColor: '#E1CCB1',
+    badgeBg: 'rgba(140, 111, 85, 0.15)',
+    badgeBorderColor: 'rgba(140, 111, 85, 0.35)',
+    badgeText: colors.mutedText,
+    dividerColor: 'rgba(140, 111, 85, 0.35)',
+    hintText: colors.mutedText,
+  },
+  confirmed: {
+    cardBg: '#EEF7F0',
+    borderColor: '#A6D7BA',
+    badgeBg: 'rgba(31, 122, 82, 0.15)',
+    badgeBorderColor: 'rgba(31, 122, 82, 0.35)',
+    badgeText: colors.success,
+    dividerColor: 'rgba(31, 122, 82, 0.4)',
+    hintText: colors.success,
+  },
+};
+
+const formatClockLabel = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return '';
+  }
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+};
+
+const capitalizeWord = (value) => {
+  if (typeof value !== 'string' || !value.length) {
+    return '';
+  }
+  return value.charAt(0).toUpperCase() + value.slice(1);
+};
 
 const formatDateTime = (date) => {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
@@ -38,18 +128,6 @@ const formatDateTime = (date) => {
     hour: '2-digit',
     minute: '2-digit',
   })}`;
-};
-
-const formatDateRange = (start, end) => {
-  if (!start) {
-    return 'Ukendt tidspunkt';
-  }
-
-  if (!end) {
-    return formatDateTime(start);
-  }
-
-  return `${formatDateTime(start)} - ${formatDateTime(end)}`;
 };
 
 const toDate = (value) => {
@@ -72,6 +150,48 @@ const toDate = (value) => {
   return null;
 };
 
+const formatWeekdayDateLabel = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return 'Ukendt dag';
+  }
+
+  const weekday = capitalizeWord(
+    date.toLocaleDateString('da-DK', { weekday: 'long' })
+  );
+  const dateLabel = date.toLocaleDateString('da-DK');
+  return `${weekday} d. ${dateLabel}`;
+};
+
+const formatDateRange = (start, end) => {
+  const startDate =
+    start instanceof Date && !Number.isNaN(start.getTime()) ? start : toDate(start);
+  if (!(startDate instanceof Date) || Number.isNaN(startDate.getTime())) {
+    return 'Ukendt tidspunkt';
+  }
+
+  const startDateLabel = formatWeekdayDateLabel(startDate);
+  const startTimeLabel = formatClockLabel(startDate);
+  const endDate =
+    end instanceof Date && !Number.isNaN(end?.getTime()) ? end : toDate(end);
+
+  if (!(endDate instanceof Date) || Number.isNaN(endDate.getTime())) {
+    return `${startDateLabel} kl. ${startTimeLabel}`;
+  }
+
+  const endTimeLabel = formatClockLabel(endDate);
+  const isSameDay =
+    startDate.getFullYear() === endDate.getFullYear() &&
+    startDate.getMonth() === endDate.getMonth() &&
+    startDate.getDate() === endDate.getDate();
+
+  if (isSameDay) {
+    return `${startDateLabel} kl. ${startTimeLabel}-${endTimeLabel}`;
+  }
+
+  const endDateLabel = formatWeekdayDateLabel(endDate);
+  return `${startDateLabel} kl. ${startTimeLabel} - ${endDateLabel} kl. ${endTimeLabel}`;
+};
+
 const OwnCalendarScreen = () => {
   const currentUser = auth.currentUser;
   const currentUserId = currentUser?.uid ?? null;
@@ -86,6 +206,8 @@ const OwnCalendarScreen = () => {
   const [familyId, setFamilyId] = useState(null);
   const [familyName, setFamilyName] = useState('');
   const [familyMembers, setFamilyMembers] = useState([]);
+  const [familyPreferences, setFamilyPreferences] = useState({});
+  const [calendarAvailability, setCalendarAvailability] = useState({});
   const [currentUserEmoji, setCurrentUserEmoji] = useState(DEFAULT_AVATAR_EMOJI);
   const memberById = useMemo(() => {
     const map = new Map();
@@ -116,6 +238,48 @@ const OwnCalendarScreen = () => {
   const [selectedSuggestionId, setSelectedSuggestionId] = useState(null);
   const [cancelProposal, setCancelProposal] = useState(false);
   const [expandedEventIds, setExpandedEventIds] = useState(() => new Set());
+  const [deviceCalendarSource, setDeviceCalendarSource] = useState({
+    ready: false,
+    calendarIds: [],
+  });
+  const [deviceBusyRefreshToken, setDeviceBusyRefreshToken] = useState(0);
+  const deviceBusyLoadedRef = useRef('');
+  const appStateRef = useRef(AppState.currentState);
+  const [autoSuggestions, setAutoSuggestions] = useState([]);
+  const autoSlotQueueRef = useRef([]);
+  const autoSlotCursorRef = useRef(0);
+  const [autoSuggestionError, setAutoSuggestionError] = useState('');
+  const [autoSuggestionNotice, setAutoSuggestionNotice] = useState('');
+  const [autoActionId, setAutoActionId] = useState(null);
+  const [suggestionLoading, setSuggestionLoading] = useState(true);
+  const { remoteActivities, manualActivities } = useActivityPool();
+  const [previewSuggestion, setPreviewSuggestion] = useState(null);
+
+  useEffect(() => {
+    const handleAppStateChange = (nextState) => {
+      if (appStateRef.current !== 'active' && nextState === 'active') {
+        setDeviceBusyRefreshToken((token) => token + 1);
+      }
+      appStateRef.current = nextState;
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+    return () => {
+      if (subscription && typeof subscription.remove === 'function') {
+        subscription.remove();
+      } else {
+        AppState.removeEventListener('change', handleAppStateChange);
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    const intervalId = setInterval(() => {
+      setDeviceBusyRefreshToken((token) => token + 1);
+    }, DEVICE_BUSY_POLL_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, []);
 
   const toggleEventDetails = useCallback((eventId) => {
     setExpandedEventIds((prev) => {
@@ -198,38 +362,432 @@ const OwnCalendarScreen = () => {
     resetProposalState();
   }, [resetProposalState]);
 
-  const eventsPendingUser = useMemo(
-    () =>
-      events.filter(
-        (event) =>
-          Array.isArray(event.pendingApprovals) &&
-          event.pendingApprovals.includes(currentUserId)
-      ),
-    [events, currentUserId]
+  const requiresRenewedApproval = useCallback(
+    (event) => event?.status === 'pending' || Boolean(event?.pendingChange),
+    []
   );
+
+  const eventsPendingUser = useMemo(() => {
+    if (!currentUserId) {
+      return [];
+    }
+
+    return events.filter(
+      (event) =>
+        requiresRenewedApproval(event) &&
+        Array.isArray(event.pendingApprovals) &&
+        event.pendingApprovals.includes(currentUserId)
+    );
+  }, [events, currentUserId, requiresRenewedApproval]);
 
   const eventsPendingOthers = useMemo(
     () =>
       events.filter(
         (event) =>
-          event.status === 'pending' &&
+          requiresRenewedApproval(event) &&
           (!Array.isArray(event.pendingApprovals) ||
             !event.pendingApprovals.includes(currentUserId))
       ),
-    [events, currentUserId]
+    [events, currentUserId, requiresRenewedApproval]
   );
 
   const eventsConfirmed = useMemo(
     () =>
       events
-        .filter((event) => event.status === 'confirmed')
+        .filter(
+          (event) =>
+            event.status === 'confirmed' && !requiresRenewedApproval(event)
+        )
         .sort((a, b) => {
           const timeA = a.start ? a.start.getTime() : 0;
           const timeB = b.start ? b.start.getTime() : 0;
           return timeA - timeB;
         }),
+    [events, requiresRenewedApproval]
+  );
+
+  const confirmedEventsAll = useMemo(
+    () => events.filter((event) => event.status === 'confirmed'),
     [events]
   );
+  const pendingEventsAll = useMemo(
+    () => events.filter((event) => event.status === 'pending'),
+    [events]
+  );
+
+  const calendarEntries = useMemo(() => {
+    const memberIds = Array.isArray(familyMembers)
+      ? familyMembers
+          .map((member) => member?.userId)
+          .filter((id) => typeof id === 'string' && id.trim().length > 0)
+      : [];
+
+    const uniqueIds = new Set(memberIds);
+    if (currentUserId) {
+      uniqueIds.add(currentUserId);
+    }
+
+    return Array.from(uniqueIds).map((userId) => {
+      const entry = calendarAvailability[userId] ?? { busy: { shared: [], device: [] }, preferences: {} };
+      const sharedBusy = entry.busy?.shared ?? [];
+      const deviceBusy = entry.busy?.device ?? [];
+      const busy = mergeBusyIntervals(sharedBusy, deviceBusy);
+
+      return {
+        userId,
+        busy,
+        preferences: entry.preferences ?? {},
+      };
+    });
+  }, [familyMembers, currentUserId, calendarAvailability]);
+
+  const availabilityUserPreferences = useMemo(() => {
+    if (!familyPreferences || typeof familyPreferences !== 'object') {
+      return {};
+    }
+
+    const normalized = {};
+    Object.entries(familyPreferences).forEach(([userId, prefs]) => {
+      if (!prefs || typeof prefs !== 'object') {
+        return;
+      }
+
+      const entry = {};
+      if (Array.isArray(prefs.days) && prefs.days.length) {
+        entry.allowedWeekdays = prefs.days;
+      }
+      if (prefs.timeWindows) {
+        entry.timeWindows = prefs.timeWindows;
+      }
+
+      const numericFields = [
+        'minDurationMinutes',
+        'maxDurationMinutes',
+        'preferredDurationMinutes',
+        'slotStepMinutes',
+        'maxSuggestionDaysPerWeek',
+        'bufferBeforeMinutes',
+        'bufferAfterMinutes',
+      ];
+
+      numericFields.forEach((key) => {
+        const value = prefs[key];
+        if (typeof value === 'number' && Number.isFinite(value)) {
+          entry[key] = value;
+        }
+      });
+
+      if (typeof prefs.timeZone === 'string' && prefs.timeZone.trim().length) {
+        entry.timeZone = prefs.timeZone.trim();
+      }
+
+      if (Object.keys(entry).length) {
+        normalized[userId] = entry;
+      }
+    });
+
+    return normalized;
+  }, [familyPreferences]);
+
+  const globalBusyIntervals = useMemo(() => {
+    const confirmedBusy = buildEventBusyIntervals(confirmedEventsAll);
+    const pendingBusy = buildEventBusyIntervals(pendingEventsAll);
+    return mergeBusyIntervals(confirmedBusy, pendingBusy);
+  }, [confirmedEventsAll, pendingEventsAll]);
+
+  const buildSuggestionFromSlot = useCallback(
+    (slot) => {
+      if (
+        !slot ||
+        !(slot.start instanceof Date) ||
+        !(slot.end instanceof Date) ||
+        Number.isNaN(slot.start.getTime()) ||
+        Number.isNaN(slot.end.getTime())
+      ) {
+        return null;
+      }
+
+      const seedKey = familyId || currentUserId || 'famtime';
+      const baseSeed = `${seedKey}|${slot.start.getTime()}|${slot.end.getTime()}`;
+      const remoteAvailable = remoteActivities.length > 0;
+      const manualAvailable = manualActivities.length > 0;
+
+      if (!remoteAvailable && !manualAvailable) {
+        return null;
+      }
+
+      const shouldUseRemote = (() => {
+        if (!remoteAvailable) {
+          return false;
+        }
+        if (!manualAvailable) {
+          return true;
+        }
+        const roll = simpleHash(`${baseSeed}|pool`) % 100;
+        return roll < REMOTE_ACTIVITY_WEIGHT * 100;
+      })();
+
+      const pool = shouldUseRemote ? remoteActivities : manualActivities;
+      if (!pool.length) {
+        return null;
+      }
+
+      const poolType = shouldUseRemote ? 'remote' : 'manual';
+      const index = simpleHash(`${baseSeed}|${poolType}`) % pool.length;
+      const activity = pool[index];
+      const sourceLabel =
+        activity.source === 'remote'
+          ? 'Fra aktivitetsbanken'
+          : activity.source === 'weekend'
+            ? 'Weekendkatalog'
+            : 'Hverdagskatalog';
+
+      const description = activity.description ?? '';
+      const priceLabel =
+        typeof activity.price === 'number' && Number.isFinite(activity.price)
+          ? `${activity.price} kr.`
+          : '';
+      const previewText = (() => {
+        if (!description) {
+          return '';
+        }
+        const firstLine =
+          description
+            .split('\n')
+            .map((line) => line.trim())
+            .filter((line) => line.length)[0] ?? '';
+        if (firstLine.length > 140) {
+          return `${firstLine.slice(0, 137)}...`;
+        }
+        return firstLine;
+      })();
+
+      return {
+        id: `${slot.id}::${activity.id}`,
+        slotId: slot.id,
+        start: slot.start,
+        end: slot.end,
+        title: activity.title ?? 'FamTime forslag',
+        description,
+        priceLabel,
+        preview: previewText,
+        activitySource: sourceLabel,
+        activity,
+        sourceType: activity.source,
+      };
+    },
+    [familyId, currentUserId, manualActivities, remoteActivities]
+  );
+
+  const fillVisibleSuggestions = useCallback(
+    (baseList = []) => {
+      const base = Array.isArray(baseList) ? baseList.filter(Boolean) : [];
+      const usedIds = new Set(base.map((item) => item.id));
+      const next = [...base];
+
+      while (
+        next.length < AUTO_SUGGESTION_VISIBLE &&
+        autoSlotCursorRef.current < autoSlotQueueRef.current.length
+      ) {
+        const slot = autoSlotQueueRef.current[autoSlotCursorRef.current];
+        autoSlotCursorRef.current += 1;
+        const suggestion = buildSuggestionFromSlot(slot);
+        if (suggestion && !usedIds.has(suggestion.id)) {
+          next.push(suggestion);
+          usedIds.add(suggestion.id);
+        }
+      }
+
+      return next;
+    },
+    [buildSuggestionFromSlot]
+  );
+
+  useEffect(() => {
+    if (!calendarEntries.length) {
+      autoSlotQueueRef.current = [];
+      autoSlotCursorRef.current = 0;
+      setAutoSuggestions([]);
+      setSuggestionLoading(false);
+      setAutoSuggestionNotice('Ingen ledige tidsrum — justér præferencer.');
+      return;
+    }
+
+    setSuggestionLoading(true);
+    setAutoSuggestionError('');
+
+    try {
+      const periodStart = new Date();
+      periodStart.setSeconds(0, 0);
+      const periodEnd = new Date(
+        periodStart.getTime() + AVAILABILITY_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000
+      );
+
+      const availabilityResult = findMutualAvailability({
+        calendars: calendarEntries,
+        periodStart,
+        periodEnd,
+        groupPreferences: {},
+        userPreferences: availabilityUserPreferences,
+        globalBusyIntervals,
+        maxSuggestions: AUTO_SUGGESTION_QUEUE_LIMIT,
+        defaultSlotDurationMinutes: DEFAULT_EVENT_DURATION_MINUTES,
+        seedKey: familyId || currentUserId || 'famtime',
+      });
+
+      const slots = Array.isArray(availabilityResult.slots)
+        ? availabilityResult.slots.map((slot, index) => ({
+            id: `${slot.start.getTime()}-${slot.end.getTime()}-${index}`,
+            start: slot.start,
+            end: slot.end,
+          }))
+        : [];
+
+      autoSlotQueueRef.current = slots;
+      autoSlotCursorRef.current = 0;
+      setSuggestionLoading(false);
+      setAutoSuggestionNotice(slots.length ? '' : 'Ingen ledige tidsrum — justér præferencer.');
+      setAutoSuggestions(fillVisibleSuggestions([]));
+    } catch (error) {
+      console.warn('[OwnCalendar] build auto suggestions', error);
+      setAutoSuggestionError('Kunne ikke hente forslag lige nu.');
+      setSuggestionLoading(false);
+      autoSlotQueueRef.current = [];
+      autoSlotCursorRef.current = 0;
+      setAutoSuggestions([]);
+    }
+  }, [
+    availabilityUserPreferences,
+    calendarEntries,
+    currentUserId,
+    familyId,
+    fillVisibleSuggestions,
+    globalBusyIntervals,
+  ]);
+
+  useEffect(() => {
+    setAutoSuggestions((prev) => fillVisibleSuggestions(prev.slice(0, AUTO_SUGGESTION_VISIBLE)));
+  }, [fillVisibleSuggestions, manualActivities, remoteActivities]);
+
+  useEffect(() => {
+    if (!autoSuggestions.length && !suggestionLoading) {
+      if (autoSlotCursorRef.current >= autoSlotQueueRef.current.length) {
+        setAutoSuggestionNotice('Ingen ledige tidsrum — justér præferencer.');
+      }
+    }
+  }, [autoSuggestions.length, suggestionLoading]);
+
+  const handleDismissAutoSuggestion = useCallback(
+    (suggestionId) => {
+      setAutoSuggestions((prev) =>
+        fillVisibleSuggestions(prev.filter((item) => item.id !== suggestionId))
+      );
+    },
+    [fillVisibleSuggestions]
+  );
+
+  const handleAcceptAutoSuggestion = useCallback(
+    async (suggestion) => {
+      if (!suggestion || !familyId || !currentUserId) {
+        return;
+      }
+
+      setAutoActionId(suggestion.id);
+
+      try {
+        const memberIds = await computeMemberIds();
+        if (!memberIds.length) {
+          setError('Ingen familie tilknyttet. Tilslut dig en familie først.');
+          return;
+        }
+
+        const pendingApprovals = memberIds.filter((id) => id !== currentUserId);
+        const initialApprovedBy = currentUserId ? [currentUserId] : [];
+        const start =
+          suggestion.start instanceof Date && !Number.isNaN(suggestion.start.getTime())
+            ? suggestion.start
+            : new Date();
+        const proposedEnd =
+          suggestion.end instanceof Date && !Number.isNaN(suggestion.end.getTime())
+            ? suggestion.end
+            : new Date(start.getTime() + DEFAULT_EVENT_DURATION_MINUTES * 60000);
+        const end =
+          proposedEnd > start
+            ? proposedEnd
+            : new Date(start.getTime() + DEFAULT_EVENT_DURATION_MINUTES * 60000);
+        const description = [
+          suggestion.description,
+          suggestion.priceLabel ? `Pris: ${suggestion.priceLabel}` : '',
+          suggestion.activitySource,
+        ]
+          .filter((text) => typeof text === 'string' && text.trim().length)
+          .join('\n\n');
+
+        const payload = {
+          title: suggestion.title,
+          description,
+          start: firebase.firestore.Timestamp.fromDate(start),
+          end: firebase.firestore.Timestamp.fromDate(end),
+          updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+          pendingApprovals,
+          approvedBy:
+            pendingApprovals.length === 0
+              ? Array.from(new Set([...initialApprovedBy, ...memberIds]))
+              : initialApprovedBy,
+          status: pendingApprovals.length === 0 ? 'confirmed' : 'pending',
+          lastModifiedBy: currentUserId ?? null,
+          lastModifiedEmail: currentUserEmail ?? '',
+          autoSuggestionSource: suggestion.sourceType,
+        };
+
+        const createPayload = {
+          ...payload,
+          createdBy: currentUserEmail,
+          createdByUid: currentUserId ?? '',
+          createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        };
+
+        if (pendingApprovals.length === 0) {
+          createPayload.approvedAt = firebase.firestore.FieldValue.serverTimestamp();
+        }
+
+        await db
+          .collection('families')
+          .doc(familyId)
+          .collection('events')
+          .add(createPayload);
+
+        setStatusMessage('Forslaget er sendt til familien.');
+        setAutoSuggestions((prev) =>
+          fillVisibleSuggestions(prev.filter((item) => item.id !== suggestion.id))
+        );
+      } catch (error) {
+        console.warn('[OwnCalendar] accept auto suggestion', error);
+        setError('Kunne ikke sende forslaget. Prøv igen.');
+      } finally {
+        setAutoActionId(null);
+      }
+    },
+    [
+      computeMemberIds,
+      currentUserEmail,
+      currentUserId,
+      familyId,
+      fillVisibleSuggestions,
+      setStatusMessage,
+    ]
+  );
+
+  const handleOpenSuggestionPreview = useCallback((suggestion) => {
+    if (!suggestion) {
+      return;
+    }
+    setPreviewSuggestion(suggestion);
+  }, []);
+
+  const handleCloseSuggestionPreview = useCallback(() => {
+    setPreviewSuggestion(null);
+  }, []);
 
   useEffect(() => {
     setExpandedEventIds((prev) => {
@@ -249,6 +807,443 @@ const OwnCalendarScreen = () => {
       return next;
     });
   }, [events]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const fetchPreferences = async () => {
+      const memberIds = familyMembers
+        .map((member) => member?.userId)
+        .filter((id) => typeof id === 'string' && id.trim().length > 0);
+
+      if (!memberIds.length) {
+        if (isActive) {
+          setFamilyPreferences({});
+        }
+        return;
+      }
+
+      try {
+        const snapshots = await Promise.all(
+          memberIds.map((id) =>
+            db
+              .collection('users')
+              .doc(id)
+              .get()
+              .catch(() => null)
+          )
+        );
+
+        const rawPreferenceMap = {};
+        snapshots.forEach((docSnapshot, index) => {
+          if (!docSnapshot || !docSnapshot.exists) {
+            return;
+          }
+          const memberId = memberIds[index];
+          const data = docSnapshot.data() ?? {};
+          const timeWindows =
+            data?.preferredFamilyTimeWindows && typeof data.preferredFamilyTimeWindows === 'object'
+              ? data.preferredFamilyTimeWindows
+              : null;
+          const minDurationMinutes =
+            typeof data?.preferredFamilyMinDurationMinutes === 'number'
+              ? data.preferredFamilyMinDurationMinutes
+              : null;
+          const maxDurationMinutes =
+            typeof data?.preferredFamilyMaxDurationMinutes === 'number'
+              ? data.preferredFamilyMaxDurationMinutes
+              : null;
+          const preferredDurationMinutes =
+            typeof data?.preferredFamilyPreferredDurationMinutes === 'number'
+              ? data.preferredFamilyPreferredDurationMinutes
+              : null;
+          const slotStepMinutes =
+            typeof data?.preferredFamilySlotStepMinutes === 'number'
+              ? data.preferredFamilySlotStepMinutes
+              : null;
+          const maxSuggestionDaysPerWeek =
+            typeof data?.preferredFamilyMaxSuggestionDaysPerWeek === 'number'
+              ? data.preferredFamilyMaxSuggestionDaysPerWeek
+              : null;
+          const bufferBeforeMinutes =
+            typeof data?.preferredFamilyBufferBeforeMinutes === 'number'
+              ? data.preferredFamilyBufferBeforeMinutes
+              : null;
+          const bufferAfterMinutes =
+            typeof data?.preferredFamilyBufferAfterMinutes === 'number'
+              ? data.preferredFamilyBufferAfterMinutes
+              : null;
+          const timeZone =
+            typeof data?.preferredFamilyTimeZone === 'string' && data.preferredFamilyTimeZone.trim().length
+              ? data.preferredFamilyTimeZone.trim()
+              : null;
+          rawPreferenceMap[memberId] = {
+            mode: normalizeFamilyPreferenceMode(data.familyPreferenceMode),
+            followUserId:
+              typeof data?.familyPreferenceFollowUserId === 'string'
+                ? data.familyPreferenceFollowUserId.trim()
+                : '',
+            own: {
+              days: Array.isArray(data.preferredFamilyDays) ? data.preferredFamilyDays : [],
+              timeWindows,
+              minDurationMinutes,
+              maxDurationMinutes,
+              preferredDurationMinutes,
+              slotStepMinutes,
+              maxSuggestionDaysPerWeek,
+              bufferBeforeMinutes,
+              bufferAfterMinutes,
+              timeZone,
+            },
+          };
+        });
+
+        const createEmptyPreferences = () => ({
+          days: [],
+          timeWindows: null,
+          minDurationMinutes: null,
+          maxDurationMinutes: null,
+          preferredDurationMinutes: null,
+          slotStepMinutes: null,
+          maxSuggestionDaysPerWeek: null,
+          bufferBeforeMinutes: null,
+          bufferAfterMinutes: null,
+          timeZone: null,
+        });
+
+        const resolvedPreferences = {};
+        const resolvePreferenceEntry = (memberId, chain = new Set()) => {
+          if (resolvedPreferences[memberId]) {
+            return resolvedPreferences[memberId];
+          }
+          const entry = rawPreferenceMap[memberId];
+          if (!entry) {
+            const empty = createEmptyPreferences();
+            resolvedPreferences[memberId] = empty;
+            return empty;
+          }
+          if (entry.mode === FAMILY_PREFERENCE_MODES.NONE) {
+            const empty = createEmptyPreferences();
+            resolvedPreferences[memberId] = empty;
+            return empty;
+          }
+          if (entry.mode === FAMILY_PREFERENCE_MODES.FOLLOW) {
+            const targetId = entry.followUserId;
+            if (
+              targetId &&
+              targetId !== memberId &&
+              rawPreferenceMap[targetId] &&
+              !chain.has(targetId)
+            ) {
+              chain.add(memberId);
+              const resolvedTarget = resolvePreferenceEntry(targetId, chain);
+              chain.delete(memberId);
+              const clone = {
+                ...resolvedTarget,
+                days: Array.isArray(resolvedTarget?.days) ? [...resolvedTarget.days] : [],
+              };
+              resolvedPreferences[memberId] = clone;
+              return clone;
+            }
+            const empty = createEmptyPreferences();
+            resolvedPreferences[memberId] = empty;
+            return empty;
+          }
+          const normalized = {
+            ...createEmptyPreferences(),
+            ...entry.own,
+            days: Array.isArray(entry.own?.days) ? entry.own.days : [],
+          };
+          resolvedPreferences[memberId] = normalized;
+          return normalized;
+        };
+
+        memberIds.forEach((memberId) => {
+          resolvePreferenceEntry(memberId);
+        });
+
+        if (isActive) {
+          setFamilyPreferences(resolvedPreferences);
+        }
+      } catch (_error) {
+        if (isActive) {
+          setFamilyPreferences({});
+        }
+      }
+    };
+
+    fetchPreferences();
+
+    return () => {
+      isActive = false;
+    };
+  }, [familyMembers]);
+
+  useEffect(() => {
+    const memberIds = Array.isArray(familyMembers)
+      ? familyMembers
+          .map((member) => member?.userId)
+          .filter((id) => typeof id === 'string' && id.trim().length > 0)
+      : [];
+
+    const uniqueIds = new Set(memberIds);
+    if (currentUserId) {
+      uniqueIds.add(currentUserId);
+    }
+
+    if (!uniqueIds.size) {
+      setCalendarAvailability({});
+      return () => {};
+    }
+
+    const activeIds = Array.from(uniqueIds);
+    let isMounted = true;
+    const unsubscribes = [];
+
+    setCalendarAvailability((prev) => {
+      const next = {};
+      activeIds.forEach((id) => {
+        if (prev[id]) {
+          next[id] = prev[id];
+        } else {
+          next[id] = { busy: { shared: [], device: [] }, preferences: {} };
+        }
+      });
+      return next;
+    });
+
+    activeIds.forEach((userId) => {
+      const unsubscribe = db
+        .collection('calendar')
+        .doc(userId)
+        .onSnapshot(
+          (snapshot) => {
+            if (!isMounted) {
+              return;
+            }
+
+            const data = snapshot.exists ? snapshot.data() ?? {} : {};
+            const sharedBusy = [data.sharedBusy, data.busyIntervals, data.busy]
+              .filter((payload) => Array.isArray(payload))
+              .reduce((acc, payload) => mergeBusyIntervals(acc, normalizeBusyPayload(payload)), []);
+            const preferences = extractPreferencesFromCalendarDoc(data);
+
+            setCalendarAvailability((prev) => {
+              const prevEntry = prev[userId] ?? { busy: { shared: [], device: [] }, preferences: {} };
+              const nextBusyShared = sharedBusy.length ? sharedBusy : [];
+              const isBusySame = areBusyListsEqual(prevEntry.busy?.shared ?? [], nextBusyShared);
+              const nextPreferences = Object.keys(preferences).length
+                ? { ...prevEntry.preferences, ...preferences }
+                : prevEntry.preferences;
+              const preferencesChanged = !shallowEqualObjects(prevEntry.preferences ?? {}, nextPreferences ?? {});
+
+              if (isBusySame && !preferencesChanged) {
+                return prev;
+              }
+
+              const nextEntry = {
+                busy: {
+                  shared: nextBusyShared,
+                  device: prevEntry.busy?.device ?? [],
+                },
+                preferences: nextPreferences,
+              };
+              return {
+                ...prev,
+                [userId]: nextEntry,
+              };
+            });
+          },
+          (error) => {
+            console.warn('[OwnCalendar] calendar availability snapshot', error);
+          }
+        );
+
+      unsubscribes.push(unsubscribe);
+    });
+
+    return () => {
+      isMounted = false;
+      unsubscribes.forEach((unsubscribe) => {
+        if (typeof unsubscribe === 'function') {
+          unsubscribe();
+        }
+      });
+    };
+  }, [familyMembers, currentUserId]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    const ensureCalendarSource = async () => {
+      if (!currentUserId) {
+        if (!cancelled) {
+          setDeviceCalendarSource({ ready: false, calendarIds: [] });
+        }
+        return;
+      }
+
+      try {
+        let permissions = await Calendar.getCalendarPermissionsAsync();
+        if (permissions.status !== 'granted') {
+          permissions = await Calendar.requestCalendarPermissionsAsync();
+        }
+
+        if (permissions.status !== 'granted') {
+          if (!cancelled) {
+            setDeviceCalendarSource({ ready: false, calendarIds: [] });
+          }
+          return;
+        }
+
+        const calendarIdsSet = new Set();
+        const appendIds = (values) => {
+          (values ?? []).forEach((value) => {
+            if (typeof value === 'string' && value.trim().length > 0) {
+              calendarIdsSet.add(value);
+            }
+          });
+        };
+
+        try {
+          const calendarDoc = await db.collection('calendar').doc(currentUserId).get();
+          const calendarData = calendarDoc.data() ?? {};
+          if (Array.isArray(calendarData.calendarIds)) {
+            appendIds(calendarData.calendarIds);
+          }
+          if (typeof calendarData.calendarId === 'string') {
+            appendIds([calendarData.calendarId]);
+          }
+        } catch (_error) {
+          // ignore doc errors, fallback to device calendars
+        }
+
+        if (!calendarIdsSet.size) {
+          const deviceCalendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+          appendIds(deviceCalendars.map((calendar) => calendar?.id).filter(Boolean));
+        }
+
+        const calendarIds = Array.from(calendarIdsSet);
+        if (!cancelled) {
+          setDeviceCalendarSource({
+            ready: Boolean(calendarIds.length),
+            calendarIds,
+          });
+        }
+      } catch (error) {
+        console.warn('[OwnCalendar] ensureCalendarSource', error);
+        if (!cancelled) {
+          setDeviceCalendarSource({ ready: false, calendarIds: [] });
+        }
+      }
+    };
+
+    ensureCalendarSource();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [currentUserId]);
+
+  useEffect(() => {
+    if (
+      !currentUserId ||
+      !deviceCalendarSource.ready ||
+      !Array.isArray(deviceCalendarSource.calendarIds) ||
+      !deviceCalendarSource.calendarIds.length
+    ) {
+      return undefined;
+    }
+
+    const idsKey = deviceCalendarSource.calendarIds.slice().sort().join('|');
+    const loadKey = `${currentUserId}:${idsKey}:${deviceBusyRefreshToken}`;
+    if (deviceBusyLoadedRef.current === loadKey) {
+      return undefined;
+    }
+
+    let cancelled = false;
+
+    const loadDeviceBusy = async () => {
+      try {
+        const permissions = await Calendar.getCalendarPermissionsAsync();
+        if (permissions.status !== 'granted') {
+          return;
+        }
+
+        const now = new Date();
+        now.setSeconds(0, 0);
+        const start = new Date(now.getTime());
+        const end = new Date(
+          start.getTime() + AVAILABILITY_LOOKAHEAD_DAYS * 24 * 60 * 60 * 1000
+        );
+
+        const events = await Calendar.getEventsAsync(deviceCalendarSource.calendarIds, start, end);
+        if (cancelled) {
+          return;
+        }
+
+        const deviceBusy = Array.isArray(events)
+          ? events
+              .map((event) => {
+                const startDate = availabilityUtils.toDate(
+                  event.startDate ?? event.start ?? event.startTime ?? null
+                );
+                const endDate = availabilityUtils.toDate(
+                  event.endDate ?? event.end ?? event.endTime ?? null
+                );
+                if (!startDate || !endDate || endDate <= startDate) {
+                  return null;
+                }
+                return {
+                  start: new Date(startDate.getTime()),
+                  end: new Date(endDate.getTime()),
+                };
+              })
+              .filter((interval) => Boolean(interval))
+          : [];
+
+        const bufferedDeviceBusy = applyIntervalTravelBuffer(
+          deviceBusy,
+          PRIVATE_EVENT_TRAVEL_BUFFER_MINUTES
+        );
+
+        setCalendarAvailability((prev) => {
+          const prevEntry = prev[currentUserId] ?? { busy: { shared: [], device: [] }, preferences: {} };
+          const mergedDeviceBusy = mergeBusyIntervals(bufferedDeviceBusy, []);
+          const deviceChanged = !areBusyListsEqual(prevEntry.busy?.device ?? [], mergedDeviceBusy);
+
+          if (!deviceChanged) {
+            return prev;
+          }
+
+          return {
+            ...prev,
+            [currentUserId]: {
+              busy: {
+                shared: prevEntry.busy?.shared ?? [],
+                device: mergedDeviceBusy,
+              },
+              preferences: prevEntry.preferences ?? {},
+            },
+          };
+        });
+        deviceBusyLoadedRef.current = loadKey;
+      } catch (error) {
+        console.warn('[OwnCalendar] loadDeviceBusy', error);
+      }
+    };
+
+    loadDeviceBusy();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    currentUserId,
+    deviceBusyRefreshToken,
+    deviceCalendarSource.calendarIds,
+    deviceCalendarSource.ready,
+  ]);
 
   const loadProfileAndFamily = useCallback(() => {
     if (!currentUserId) {
@@ -723,21 +1718,74 @@ const OwnCalendarScreen = () => {
     cancelProposal,
   ]);
 
-  const renderEventSection = (title, items, hint) => {
-    if (!items.length) {
-      return null;
-    }
+  const renderEventSection = (
+    title,
+    items = [],
+    hint,
+    emptyLabel = 'Ingen begivenheder endnu',
+    emptyDescription,
+    appearance = {}
+  ) => {
+    const { badgeLabel = '', variant = 'default' } = appearance ?? {};
+    const variantTheme = SECTION_VARIANTS[variant] ?? SECTION_VARIANTS.default;
 
     return (
       <View style={styles.sectionGroup}>
-        <View style={styles.sectionCard}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>{title}</Text>
-            {hint ? <Text style={styles.sectionHint}>{hint}</Text> : null}
+        <View
+          style={[
+            styles.sectionCard,
+            {
+              backgroundColor: variantTheme.cardBg,
+              borderColor: variantTheme.borderColor,
+            },
+          ]}
+        >
+          <View style={styles.sectionHeaderRow}>
+            {badgeLabel ? (
+              <View
+                style={[
+                  styles.sectionBadge,
+                  {
+                    backgroundColor: variantTheme.badgeBg,
+                    borderColor: variantTheme.badgeBorderColor,
+                  },
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.sectionBadgeText,
+                    { color: variantTheme.badgeText },
+                  ]}
+                >
+                  {badgeLabel}
+                </Text>
+              </View>
+            ) : null}
+            <View style={styles.sectionHeaderText}>
+              <Text style={styles.sectionTitle}>{title}</Text>
+              {hint ? (
+                <Text
+                  style={[
+                    styles.sectionHint,
+                    { color: variantTheme.hintText ?? colors.mutedText },
+                  ]}
+                >
+                  {hint}
+                </Text>
+              ) : null}
+            </View>
           </View>
-        </View>
-        <View style={styles.eventList}>
-            {items.map((event) => {
+
+          <View
+            style={[
+              styles.sectionDivider,
+              { backgroundColor: variantTheme.dividerColor },
+            ]}
+          />
+
+          <View style={styles.eventList}>
+            {items.length
+              ? items.map((event) => {
               const pendingList = Array.isArray(event.pendingApprovals)
                 ? event.pendingApprovals.filter(
                     (id) => typeof id === 'string' && id.length > 0
@@ -847,24 +1895,59 @@ const OwnCalendarScreen = () => {
                 pendingCount > 0
                   ? pendingCount === 1
                     ? 'Afventer 1 familiemedlem'
-                    : `Afventer ${pendingCount} familiemedlemmer`
-                  : 'Alle medlemmer har godkendt.';
-              const hasExpandableDetails =
-                Boolean(event.description) || Boolean(event.pendingChange);
-              const isExpanded = expandedEventIds.has(event.id);
+            : `Afventer ${pendingCount} familiemedlemmer`
+          : 'Alle medlemmer har godkendt.';
+      const hasExpandableDetails =
+        Boolean(event.description) || Boolean(event.pendingChange);
+      const isExpanded = expandedEventIds.has(event.id);
+      const hasPendingChange = Boolean(event.pendingChange);
+      const pendingIsCancel = Boolean(event.pendingChange?.cancel);
+      const pendingTitle =
+        hasPendingChange &&
+        typeof event.pendingChange?.title === 'string' &&
+        event.pendingChange.title.trim().length
+          ? event.pendingChange.title.trim()
+          : null;
+      const pendingStart =
+        hasPendingChange && event.pendingChange?.start instanceof Date
+          ? event.pendingChange.start
+          : null;
+      const pendingEnd =
+        hasPendingChange && event.pendingChange?.end instanceof Date
+          ? event.pendingChange.end
+          : null;
+      const showNewSchedule = hasPendingChange && !pendingIsCancel;
+      const headerTitle = showNewSchedule ? pendingTitle || event.title : event.title;
+      const headerStart = showNewSchedule ? pendingStart || event.start : event.start;
+      const headerEnd = showNewSchedule ? pendingEnd || event.end : event.end;
+      const headerNote = hasPendingChange
+        ? pendingIsCancel
+          ? 'Forslag: Aflysning'
+          : 'Forslag: Nyt tidspunkt'
+        : null;
 
-              return (
-              <View key={event.id} style={styles.eventCard}>
-                <View style={styles.eventHeader}>
-                  <View style={styles.eventHeaderText}>
-                    <Text style={styles.eventTitle}>{event.title}</Text>
-                    <Text style={styles.eventTime}>
-                      {formatDateRange(event.start, event.end)}
-                    </Text>
-                  </View>
-                  {hasExpandableDetails ? (
-                    <Pressable
-                      onPress={() => toggleEventDetails(event.id)}
+      return (
+      <View key={event.id} style={styles.eventCard}>
+        <View style={styles.eventHeader}>
+          <View style={styles.eventHeaderText}>
+            {headerNote ? (
+              <View
+                style={[
+                  styles.eventChangeBadge,
+                  pendingIsCancel ? styles.eventChangeBadgeCancel : styles.eventChangeBadgeUpdate,
+                ]}
+              >
+                <Text style={styles.eventChangeBadgeText}>{headerNote}</Text>
+              </View>
+            ) : null}
+            <Text style={styles.eventTitle}>{headerTitle}</Text>
+            <Text style={styles.eventTime}>
+              {formatDateRange(headerStart, headerEnd)}
+            </Text>
+          </View>
+          {hasExpandableDetails ? (
+            <Pressable
+              onPress={() => toggleEventDetails(event.id)}
                       accessibilityRole="button"
                       accessibilityState={{ expanded: isExpanded }}
                       accessibilityLabel={
@@ -998,9 +2081,174 @@ const OwnCalendarScreen = () => {
                 </View>
               </View>
             );
-          })}
+          })
+              : (
+                <View style={styles.emptyCard}>
+                  <Text style={styles.emptyTitle}>{emptyLabel}</Text>
+                  {emptyDescription ? (
+                    <Text style={styles.emptySubtitle}>{emptyDescription}</Text>
+                  ) : null}
+                </View>
+              )}
+          </View>
         </View>
       </View>
+    );
+  };
+
+  const renderAutoSuggestionSection = () => {
+    const variantTheme = SECTION_VARIANTS.ideas;
+    const showEmptyState = !suggestionLoading && !autoSuggestions.length;
+    const emptyLabel = autoSuggestionNotice || 'Ingen ledige tidsrum — justér præferencer.';
+
+    return (
+      <View style={styles.sectionGroup}>
+        <View
+          style={[
+            styles.sectionCard,
+            {
+              backgroundColor: variantTheme.cardBg,
+              borderColor: variantTheme.borderColor,
+            },
+          ]}
+        >
+          <View style={styles.sectionHeaderRow}>
+            <View
+              style={[
+                styles.sectionBadge,
+                {
+                  backgroundColor: variantTheme.badgeBg,
+                  borderColor: variantTheme.badgeBorderColor,
+                },
+              ]}
+            >
+              <Text
+                style={[
+                  styles.sectionBadgeText,
+                  { color: variantTheme.badgeText },
+                ]}
+              >
+                02
+              </Text>
+            </View>
+            <View style={styles.sectionHeaderText}>
+              <Text style={styles.sectionTitle}>Nye forslag</Text>
+              <Text
+                style={[
+                  styles.sectionHint,
+                  { color: variantTheme.hintText ?? colors.mutedText },
+                ]}
+              >
+                FamTime foreslår tider hvor alle kan. Godkend for at sende til familien.
+              </Text>
+            </View>
+          </View>
+
+          <View
+            style={[
+              styles.sectionDivider,
+              { backgroundColor: variantTheme.dividerColor },
+            ]}
+          />
+
+          <ErrorMessage message={autoSuggestionError} />
+          {suggestionLoading ? (
+            <Text style={styles.infoText}>Finder ledige tider...</Text>
+          ) : null}
+
+          {autoSuggestions.length ? (
+            <View style={styles.autoSuggestionList}>
+              {autoSuggestions.map((suggestion) => (
+                <View key={suggestion.id} style={styles.autoSuggestionCard}>
+                  <View style={styles.autoSuggestionHeader}>
+                    <Text style={styles.autoSuggestionTitle}>{suggestion.title}</Text>
+                    <Pressable
+                      onPress={() => handleOpenSuggestionPreview(suggestion)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Læs mere om ${suggestion.title}`}
+                      style={styles.autoSuggestionEyeButton}
+                    >
+                      <Ionicons name="eye-outline" style={styles.autoSuggestionEyeIcon} />
+                    </Pressable>
+                  </View>
+                  <Text style={styles.autoSuggestionTime}>
+                    {formatDateRange(suggestion.start, suggestion.end)}
+                  </Text>
+                  {suggestion.preview ? (
+                    <Text style={styles.autoSuggestionPreview}>{suggestion.preview}</Text>
+                  ) : null}
+                  <View style={styles.autoSuggestionActions}>
+                    <Button
+                      title="Godkend"
+                      onPress={() => handleAcceptAutoSuggestion(suggestion)}
+                      loading={autoActionId === suggestion.id}
+                      style={[styles.eventActionButton, styles.eventApproveButton]}
+                    />
+                    <Button
+                      title="Afvis"
+                      onPress={() => handleDismissAutoSuggestion(suggestion.id)}
+                      disabled={autoActionId === suggestion.id}
+                      style={[styles.eventActionButton, styles.eventRejectButton]}
+                    />
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : null}
+
+          {showEmptyState ? (
+            <View style={styles.emptyCard}>
+              <Text style={styles.emptyTitle}>Ingen forslag endnu</Text>
+              <Text style={styles.emptySubtitle}>{emptyLabel}</Text>
+            </View>
+          ) : null}
+        </View>
+      </View>
+    );
+  };
+
+  const renderAutoSuggestionPreviewModal = () => {
+    if (!previewSuggestion) {
+      return null;
+    }
+
+    const previewText =
+      previewSuggestion.description && previewSuggestion.description.trim().length
+        ? previewSuggestion.description
+        : 'Ingen beskrivelse tilgængelig.';
+    const priceLine =
+      previewSuggestion.priceLabel && previewSuggestion.priceLabel.trim().length
+        ? previewSuggestion.priceLabel
+        : '';
+
+    return (
+      <Modal
+        visible
+        transparent
+        animationType="fade"
+        onRequestClose={handleCloseSuggestionPreview}
+      >
+        <View style={styles.previewModalBackdrop}>
+          <Pressable
+            style={styles.previewModalScrim}
+            onPress={handleCloseSuggestionPreview}
+            accessibilityRole="button"
+            accessibilityLabel="Luk begivenhedsbeskrivelse"
+          />
+          <View style={styles.previewModalCard}>
+            <Text style={styles.previewModalTitle}>{previewSuggestion.title}</Text>
+            <Text style={styles.previewModalDescription}>{previewText}</Text>
+            {priceLine ? (
+              <Text style={styles.previewModalPrice}>Pris: {priceLine}</Text>
+            ) : null}
+            <Button
+              title="Luk"
+              onPress={handleCloseSuggestionPreview}
+              style={styles.previewModalButton}
+            />
+          </View>
+        </View>
+      </Modal>
     );
   };
 
@@ -1046,19 +2294,36 @@ const OwnCalendarScreen = () => {
             {renderEventSection(
               'Kræver din godkendelse',
               eventsPendingUser,
-              'Disse begivenheder venter på din accept eller afvisning.'
+              'Disse begivenheder venter på din accept eller afvisning.',
+              'Alt er godkendt for nu.',
+              'Når et familiemedlem sender dig en begivenhed, dukker den op her.',
+              { badgeLabel: '01', variant: 'review' }
             )}
+
+            {renderAutoSuggestionSection()}
 
             {renderEventSection(
               'Afventer andre familiemedlemmer',
               eventsPendingOthers,
-              'Forslag sendt af dig eller andre familiemedlemmer, som stadig er i proces.'
+              'Forslag sendt af dig eller andre familiemedlemmer, som stadig er i proces.',
+              'Ingen åbne forespørgsler hos familien.',
+              'Vi giver besked, så snart de andre har svaret.',
+              { badgeLabel: '03', variant: 'waiting' }
             )}
 
-            {renderEventSection('Bekræftede begivenheder', eventsConfirmed)}
+            {renderEventSection(
+              'Bekræftede begivenheder',
+              eventsConfirmed,
+              null,
+              'Ingen bekræftede aftaler i kalenderen endnu.',
+              'Når I har godkendt en begivenhed, lander den her.',
+              { badgeLabel: '04', variant: 'confirmed' }
+            )}
           </View>
         </ScrollView>
       </SafeAreaView>
+
+      {renderAutoSuggestionPreviewModal()}
 
       <Modal
         visible={proposalVisible}

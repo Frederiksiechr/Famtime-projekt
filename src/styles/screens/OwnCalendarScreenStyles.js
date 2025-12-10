@@ -83,7 +83,8 @@ const styles = StyleSheet.create({
   sectionCard: {
     backgroundColor: colors.surface,
     borderRadius: radius.xl,
-    borderWidth: 0,
+    borderWidth: 2,
+    borderColor: colors.border,
     padding: spacing.lg,
     gap: spacing.md,
     shadowColor: colors.shadow,
@@ -95,8 +96,54 @@ const styles = StyleSheet.create({
   eventList: {
     gap: spacing.md,
   },
-  sectionHeader: {
+  autoSuggestionList: {
+    gap: spacing.md,
+  },
+  emptyCard: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.xl,
+    padding: spacing.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
     gap: spacing.xs,
+  },
+  emptyTitle: {
+    fontSize: fontSizes.md,
+    fontWeight: '600',
+    color: colors.text,
+  },
+  emptySubtitle: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+  },
+  sectionHeaderRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+  },
+  sectionHeaderText: {
+    flex: 1,
+    gap: spacing.xs,
+  },
+  sectionBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: colors.surfaceMuted,
+  },
+  sectionBadgeText: {
+    fontSize: fontSizes.md,
+    fontWeight: '700',
+    color: colors.text,
   },
   sectionTitle: {
     fontSize: fontSizes.lg,
@@ -107,6 +154,12 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.sm,
     color: colors.mutedText,
     marginTop: spacing.xs,
+  },
+  sectionDivider: {
+    height: 2,
+    borderRadius: 999,
+    backgroundColor: colors.border,
+    marginVertical: spacing.sm,
   },
   eventCard: {
     borderRadius: radius.md,
@@ -145,6 +198,27 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: colors.text,
     marginBottom: spacing.xs,
+  },
+  eventChangeBadge: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+    marginBottom: spacing.xs,
+    backgroundColor: colors.surfaceMuted,
+  },
+  eventChangeBadgeUpdate: {
+    backgroundColor: 'rgba(230, 138, 46, 0.2)',
+  },
+  eventChangeBadgeCancel: {
+    backgroundColor: 'rgba(209, 67, 36, 0.18)',
+  },
+  eventChangeBadgeText: {
+    fontSize: fontSizes.xs,
+    fontWeight: '700',
+    color: colors.text,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
   },
   eventTime: {
     fontSize: fontSizes.md,
@@ -222,6 +296,100 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: spacing.sm,
     marginTop: spacing.sm,
+  },
+  autoSuggestionCard: {
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+    backgroundColor: colors.surface,
+    gap: spacing.sm,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 1,
+  },
+  autoSuggestionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
+  autoSuggestionTitle: {
+    fontSize: fontSizes.lg,
+    fontWeight: '700',
+    color: colors.text,
+    flex: 1,
+  },
+  autoSuggestionTime: {
+    fontSize: fontSizes.sm,
+    color: colors.mutedText,
+  },
+  autoSuggestionPreview: {
+    fontSize: fontSizes.sm,
+    color: colors.text,
+  },
+  autoSuggestionDescription: {
+    fontSize: fontSizes.sm,
+    color: colors.text,
+    lineHeight: 20,
+  },
+  autoSuggestionEyeButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  autoSuggestionEyeIcon: {
+    fontSize: fontSizes.md,
+    color: colors.mutedText,
+  },
+  autoSuggestionActions: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    marginTop: spacing.sm,
+  },
+  previewModalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(75, 46, 18, 0.45)',
+    justifyContent: 'center',
+    padding: spacing.lg,
+  },
+  previewModalScrim: {
+    ...StyleSheet.absoluteFillObject,
+  },
+  previewModalCard: {
+    backgroundColor: colors.background,
+    borderRadius: radius.lg,
+    padding: spacing.xl,
+    gap: spacing.md,
+    shadowColor: colors.shadow,
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
+  },
+  previewModalTitle: {
+    fontSize: fontSizes.lg,
+    fontWeight: '700',
+    color: colors.text,
+  },
+  previewModalDescription: {
+    fontSize: fontSizes.md,
+    color: colors.text,
+    lineHeight: 22,
+  },
+  previewModalButton: {
+    alignSelf: 'center',
+    minWidth: 140,
+  },
+  previewModalPrice: {
+    fontSize: fontSizes.md,
+    fontWeight: '600',
+    color: colors.text,
   },
   eventActionButton: {
     flexGrow: 1,
