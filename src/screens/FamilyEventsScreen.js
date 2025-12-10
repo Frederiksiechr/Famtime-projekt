@@ -1210,10 +1210,13 @@ const FamilyEventsScreen = () => {
         return;
       }
 
-      const nextVariantSeed =
-        mood.key === 'custom'
-          ? ''
-          : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+      const nextVariantSeed = (() => {
+        if (mood.key === 'custom') {
+          return '';
+        }
+        const base = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+        return activeMoodKey === mood.key ? `${base}-regen` : base;
+      })();
       setMoodVariantSeed(nextVariantSeed);
 
       const defaultTitle =
@@ -2271,6 +2274,11 @@ const initializeCalendarContext = useCallback(
                             variant="inline"
                             moodKey={aiMoodKey}
                             variantSeed={moodVariantSeed}
+                            eventDate={
+                              activeSuggestion?.start instanceof Date
+                                ? activeSuggestion.start
+                                : null
+                            }
                             onSuggestion={handleApplyAISuggestion}
                           />
                         </View>

@@ -24,6 +24,10 @@ import {
   MOOD_OPTIONS,
   MOOD_TONE_MAP,
 } from '../data/activityCatalog';
+import {
+  simpleHash,
+  pickMoodExamples,
+} from '../utils/activityHelpers';
 export { MOOD_OPTIONS };
 
 const DAY_LABELS = {
@@ -47,6 +51,7 @@ const DAY_ORDER = [
 ];
 
 const WEEKEND_KEYS = ['friday', 'saturday', 'sunday'];
+const WEEKEND_DAY_INDEX = new Set([0, 5, 6]);
 
 const DEFAULT_MOOD_KEY = MOOD_OPTIONS[0].key;
 
@@ -104,15 +109,20 @@ const parseAge = (value) => {
   return null;
 };
 
-const simpleHash = (input) => {
-  // Genererer et stabilt tal der bruges til deterministiske fallback-forslag.
-  const str = String(input ?? '');
-  let hash = 0;
-  for (let index = 0; index < str.length; index += 1) {
-    // eslint-disable-next-line no-bitwise
-    hash = (hash * 31 + str.charCodeAt(index)) >>> 0;
+const describeActivityForPrompt = (activity) => {
+  if (!activity) {
+    return '';
   }
-  return hash;
+  const detail = sanitizeString(activity.detail)
+    .replace(/[()]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const moodList = Array.isArray(activity.moods) ? activity.moods.join(', ') : '';
+  const tone = sanitizeString(activity.tone) || 'ukendt';
+  const moodLabel = moodList || 'blandet';
+  return `${activity.label} — tone: ${tone}, humør: ${moodLabel}${
+    detail ? `, note: ${detail}` : ''
+  }`;
 };
 
 const pickDay = (hashSeed, days) => {
@@ -310,6 +320,7 @@ const AISuggestion = ({
   variant = 'card',
   moodKey: externalMoodKeyProp = null,
   variantSeed: externalVariantSeed = null,
+  eventDate = null,
 }) => {
   const isInline = variant === 'inline';
   const externalMoodKey = normalizeMoodKey(externalMoodKeyProp);
@@ -408,6 +419,15 @@ const AISuggestion = ({
     user?.preferredDays,
   ]);
 
+  const scheduleIsWeekend = useMemo(() => {
+    if (eventDate instanceof Date && !Number.isNaN(eventDate.getTime())) {
+      return WEEKEND_DAY_INDEX.has(eventDate.getDay());
+    }
+    return profile.preferredDays.some((day) =>
+      WEEKEND_KEYS.includes(sanitizeString(day).toLowerCase())
+    );
+  }, [eventDate, profile.preferredDays]);
+
   const fallbackSuggestion = useMemo(
     () =>
       generateProfileSuggestion(
@@ -429,6 +449,21 @@ const AISuggestion = ({
     [profile, selectedMood.key, fallbackVariantSeed]
   );
 
+  const inspirationExamples = useMemo(
+    () =>
+      pickMoodExamples(selectedMood.key, {
+        isWeekend: scheduleIsWeekend,
+        count: 3,
+        seed: fallbackVariantSeed || profile.seedHash || 'seed',
+      }),
+    [
+      selectedMood.key,
+      scheduleIsWeekend,
+      fallbackVariantSeed,
+      profile.seedHash,
+    ]
+  );
+
   const applySuggestion = useCallback(
     (value) => {
       const cleaned = sanitizeString(value);
@@ -441,26 +476,30 @@ const AISuggestion = ({
     [fallbackSuggestion, onSuggestion]
   );
 
-  const preferredDayLabels = useMemo(() => {
-    if (!profile.preferredDays.length) {
-      return 'Ingen registrerede';
-    }
-    return profile.preferredDays.map(toLabel).join(', ');
-  }, [profile.preferredDays]);
-
   const buildRequestBody = useCallback(() => {
-    const weekdayDays = profile.preferredDays.filter(
-      (day) => !WEEKEND_KEYS.includes(day)
-    );
-    const weekendDays = profile.preferredDays.filter((day) =>
-      WEEKEND_KEYS.includes(day)
-    );
     const moodDetail = `${selectedMood.label} – ${selectedMood.description}`;
+    const plannedDayLabel = (() => {
+      if (eventDate instanceof Date && !Number.isNaN(eventDate.getTime())) {
+        return toTitleCase(
+          eventDate.toLocaleDateString('da-DK', { weekday: 'long' })
+        );
+      }
+      const firstPreferred = profile.preferredDays[0];
+      return firstPreferred ? toLabel(firstPreferred) : '';
+    })();
+    const inspirationText = inspirationExamples.length
+      ? inspirationExamples
+          .map(
+            (activity, index) =>
+              `${index + 1}) ${describeActivityForPrompt(activity)}`
+          )
+          .join('\n')
+      : 'Ingen katalogeksempler tilgængelige.';
 
     const systemPrompt = [
       'Du er FamTime-assistenten og skriver på dansk i én kort linje.',
+      'Skab et nyt forslag inspireret af katalogets eksempler, men gentag ikke deres navne ordret.',
       'Max 18 ord, ingen emoji, slogans eller bindestreger.',
-      'Brug basisforslaget som fakta og lever præcis ét forslag, hvor dag/aktivitet/by bevares og tonen matcher humøret.',
       'Format: "[Dag: ]<kort lead> <aktivitet> [i <by>] (<kort nuance>)".',
     ].join(' ');
 
@@ -471,14 +510,16 @@ const AISuggestion = ({
       `Køn: ${profile.gender || 'ukendt'}`,
       `By: ${profile.city || 'ukendt'}`,
       `Humør: ${moodDetail}`,
-      `Foretrukne dage: ${preferredDayLabels}`,
+      `Planlagt dag: ${plannedDayLabel || 'ikke fastsat'}`,
       '',
-      `Basisforslag: "${fallbackSuggestion}"`,
+      'Inspiration fra kataloget:',
+      inspirationText,
       '',
       'Instruktioner:',
-      `1) Bevar dag, aktivitet og evt. lokation fra basisforslaget. Tonespecifik note: ${selectedMood.prompt}.`,
+      `1) Find på én ny aktivitet der matcher stemningen. Brug ${selectedMood.prompt}.`,
       '2) Svar med én kort linje (sætning eller fragment), max 18 ord.',
-      '3) Nævn ikke navn, alder eller køn, og skriv aldrig "Velkommen til FamTime".',
+      '3) Brug planlagt dag/by hvis de findes, ellers spring dem over.',
+      '4) Nævn ikke navn, alder eller køn, og skriv aldrig "Velkommen til FamTime".',
     ].join('\n');
 
     const lowerModel = typeof directModel === 'string' ? directModel.toLowerCase() : '';
@@ -490,13 +531,14 @@ const AISuggestion = ({
       ],
     };
     if (!lowerModel.includes('gpt-5')) {
-      payload.temperature = 0;
+      payload.temperature = 0.2;
     }
     return payload;
   }, [
     fallbackSuggestion,
     directModel,
-    preferredDayLabels,
+    eventDate,
+    inspirationExamples,
     profile,
     selectedMood.description,
     selectedMood.label,
