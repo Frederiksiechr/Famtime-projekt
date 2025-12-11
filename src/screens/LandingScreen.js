@@ -118,7 +118,7 @@ const PRESET_ORDER = TIME_WINDOW_PRESETS.reduce((acc, preset, index) => {
   }
   return acc;
 }, {});
-const DEFAULT_DAY_PRESET_KEY = 'evening';
+const DEFAULT_DAY_PRESET_KEY = 'allday';
 
 let slotIdCounter = 0;
 const createSlotId = () => {
@@ -203,6 +203,8 @@ const arraysEqual = (a = [], b = []) => {
   return true;
 };
 const CUSTOM_DURATION_MAX = 5 * 60;
+const DEFAULT_MIN_DURATION_MINUTES = 60;
+const DEFAULT_MAX_DURATION_MINUTES = 4 * 60;
 
 const buildTimeWindowPayload = (selections) => {
   const payload = {};
@@ -482,9 +484,9 @@ const LandingScreen = ({ navigation, route }) => {
     familyId: '',
     familyRole: '',
     preferredDays: [],
-    preferredMinDuration: '',
-    preferredMaxDuration: '',
-    avatarEmoji: DEFAULT_AVATAR_EMOJI,
+    preferredMinDuration: String(DEFAULT_MIN_DURATION_MINUTES),
+    preferredMaxDuration: String(DEFAULT_MAX_DURATION_MINUTES),
+    avatarEmoji: '',
     familyPreferenceMode: FAMILY_PREFERENCE_MODES.CUSTOM,
     familyPreferenceFollowUserId: '',
   });
@@ -503,7 +505,9 @@ const LandingScreen = ({ navigation, route }) => {
   const userEmail = auth.currentUser?.email ?? 'Ukendt bruger';
   const userId = auth.currentUser?.uid ?? null;
   const [copyFeedback, setCopyFeedback] = useState('');
+  const [formReminder, setFormReminder] = useState('');
   const [familyMembers, setFamilyMembers] = useState([]);
+  const [hasCustomDaySelected, setHasCustomDaySelected] = useState(false);
   const hasFamily = useMemo(() => Boolean(profile.familyId), [profile.familyId]);
   const normalizedPreferenceMode = useMemo(
     () => normalizeFamilyPreferenceMode(profile.familyPreferenceMode),
@@ -576,8 +580,8 @@ const LandingScreen = ({ navigation, route }) => {
     return Number.isFinite(value) && value > 0 ? value : 0;
   }, [profile.preferredMaxDuration]);
   const [durationSliderMin, durationSliderMax] = useMemo(() => {
-    const fallbackMin = 60;
-    const fallbackMax = 120;
+    const fallbackMin = DEFAULT_MIN_DURATION_MINUTES;
+    const fallbackMax = DEFAULT_MAX_DURATION_MINUTES;
     let normalizedMin =
       minDurationMinutes > 0 ? minDurationMinutes : fallbackMin;
     let normalizedMax =
@@ -657,8 +661,10 @@ const LandingScreen = ({ navigation, route }) => {
             familyId: data.familyId ?? '',
             familyRole: data.familyRole ?? '',
             preferredDays: normalizedPreferredDays,
-            preferredMinDuration: minDurationMinutes,
-            preferredMaxDuration: maxDurationMinutes,
+            preferredMinDuration:
+              minDurationMinutes || String(DEFAULT_MIN_DURATION_MINUTES),
+            preferredMaxDuration:
+              maxDurationMinutes || String(DEFAULT_MAX_DURATION_MINUTES),
             avatarEmoji:
               typeof data.avatarEmoji === 'string' && data.avatarEmoji.trim().length
                 ? data.avatarEmoji.trim()
@@ -703,6 +709,8 @@ const LandingScreen = ({ navigation, route }) => {
         Array.isArray(dayTimeSelections[key]?.slots) &&
         dayTimeSelections[key].slots.length > 0
     ).map(({ key }) => key);
+    const hasAnyDaySelected = activeKeys.length > 0;
+    setHasCustomDaySelected(hasAnyDaySelected);
     setProfile((prev) => {
       const currentDays = Array.isArray(prev.preferredDays)
         ? prev.preferredDays
@@ -1115,6 +1123,14 @@ const LandingScreen = ({ navigation, route }) => {
       ...prev,
       avatarEmoji: trimmed,
     }));
+    setFieldErrors((prev) => {
+      if (!prev.avatarEmoji) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next.avatarEmoji;
+      return next;
+    });
   };
 
   const handleCopyFamilyId = async () => {
@@ -1172,6 +1188,14 @@ const LandingScreen = ({ navigation, route }) => {
       ...prev,
       location: prev.location === city ? '' : city,
     }));
+    setFieldErrors((prev) => {
+      if (!prev.location) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next.location;
+      return next;
+    });
   }, []);
 
   const handleSelectPreferenceMode = useCallback(
@@ -1246,11 +1270,37 @@ const LandingScreen = ({ navigation, route }) => {
       preferredMinDuration: String(minMinutesValue),
       preferredMaxDuration: String(maxMinutesValue),
     }));
+    setFieldErrors((prev) => {
+      if (!prev.durationRange) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next.durationRange;
+      return next;
+    });
   }, []);
 
   const validateProfile = () => {
     const nextErrors = {};
-    if (!profile.name.trim()) {
+    const trimmedName = profile.name.trim();
+    if (isCustomPreferenceMode && !hasCustomDaySelected) {
+      nextErrors.timeWindows = 'V?lg mindst ?n dag med tidsrum.';
+    }
+
+    const trimmedGender = profile.gender.trim();
+    const trimmedAvatar =
+      typeof profile.avatarEmoji === 'string' ? profile.avatarEmoji.trim() : '';
+
+    if (!trimmedAvatar.length) {
+      nextErrors.avatarEmoji = 'V?lg en emoji.';
+    }
+
+    if (!selectedLocation) {
+      nextErrors.location = 'V?lg en by.';
+    }
+
+
+    if (!trimmedName) {
       nextErrors.name = 'Navn skal udfyldes.';
     }
 
@@ -1266,8 +1316,29 @@ const LandingScreen = ({ navigation, route }) => {
       }
     }
 
-    if (!profile.gender.trim()) {
+    if (!trimmedGender) {
       nextErrors.gender = 'Køn skal udfyldes.';
+    }
+
+    const minDurationRaw =
+      typeof profile.preferredMinDuration === 'string'
+        ? profile.preferredMinDuration.trim()
+        : '';
+    const maxDurationRaw =
+      typeof profile.preferredMaxDuration === 'string'
+        ? profile.preferredMaxDuration.trim()
+        : '';
+    const minDurationValue = Number(minDurationRaw);
+    const maxDurationValue = Number(maxDurationRaw);
+    const minDurationValid =
+      minDurationRaw.length > 0 && Number.isFinite(minDurationValue) && minDurationValue > 0;
+    const maxDurationValid =
+      maxDurationRaw.length > 0 && Number.isFinite(maxDurationValue) && maxDurationValue > 0;
+
+    if (!minDurationValid || !maxDurationValid) {
+      nextErrors.durationRange = 'V?lg b?de minimum og maksimum varighed.';
+    } else if (maxDurationValue <= minDurationValue) {
+      nextErrors.durationRange = 'Maksimum skal v?re st?rre end minimum.';
     }
 
     if (isFollowPreferenceMode) {
@@ -1321,9 +1392,13 @@ const LandingScreen = ({ navigation, route }) => {
       return;
     }
 
-    if (!validateProfile()) {
+    const isValidProfile = validateProfile();
+    if (!isValidProfile) {
+      setFormReminder('Udfyld alle felter med fejl, foer du gemmer.');
       return;
     }
+
+    setFormReminder('');
 
     try {
       setGeneralError('');
@@ -1636,6 +1711,9 @@ const LandingScreen = ({ navigation, route }) => {
                           accessibilityLabel={`Vælg ${city}`}
                         >
                           <Text
+                            numberOfLines={1}
+                            adjustsFontSizeToFit
+                            ellipsizeMode="tail"
                             style={[
                               styles.locationChipText,
                               selected ? styles.locationChipTextSelected : null,
@@ -1957,6 +2035,9 @@ const LandingScreen = ({ navigation, route }) => {
 
                   </View>
                 )}
+                {formReminder ? (
+                  <Text style={styles.validationMessage}>{formReminder}</Text>
+                ) : null}
                 <Button
                   title="Gem profil"
                   onPress={handleSaveProfile}
