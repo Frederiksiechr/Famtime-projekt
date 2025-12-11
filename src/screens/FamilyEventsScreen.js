@@ -49,6 +49,8 @@ import {
 const DEFAULT_EVENT_DURATION_MINUTES = 60;
 const MIN_EVENT_DURATION_MINUTES = 15;
 const SUGGESTION_LIMIT = 6;
+const SUGGESTION_VARIANT_BATCHES = 4;
+const TOTAL_SUGGESTION_TARGET = SUGGESTION_LIMIT * SUGGESTION_VARIANT_BATCHES;
 const AVAILABILITY_LOOKAHEAD_DAYS = 21;
 const DEVICE_BUSY_POLL_INTERVAL_MS = 10 * 1000;
 const CALENDAR_DEVICE_LOOKAHEAD_DAYS = 21;
@@ -145,6 +147,13 @@ const formatClockLabel = (date) => {
   return `${hours}:${minutes}`;
 };
 
+const getDateKey = (date) => {
+  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
+    return '';
+  }
+  return date.toISOString().slice(0, 10);
+};
+
 
 const getDurationLabel = (start, end) => {
   if (!(start instanceof Date) || !(end instanceof Date)) {
@@ -212,6 +221,8 @@ const FamilyEventsScreen = () => {
   const [showEndPicker, setShowEndPicker] = useState(isIOS);
   const [suggestions, setSuggestions] = useState([]);
   const [suggestionNotice, setSuggestionNotice] = useState('');
+  const [suggestionSeed, setSuggestionSeed] = useState(0);
+  const [avoidSuggestionDateKey, setAvoidSuggestionDateKey] = useState('');
   const [selectedSuggestionId, setSelectedSuggestionId] = useState(null);
   const [activeSlotId, setActiveSlotId] = useState(null);
   const [builderVisible, setBuilderVisible] = useState(false);
@@ -266,7 +277,6 @@ const FamilyEventsScreen = () => {
   }, [suggestions]);
 
   useEffect(() => {
-    // Når forslagene ændrer sig, vælger vi automatisk et aktivt tidsrum.
     if (!sortedSuggestions.length) {
       setActiveSlotId(null);
       return;
@@ -961,9 +971,9 @@ const FamilyEventsScreen = () => {
       groupPreferences: {},
       userPreferences: availabilityUserPreferences,
       globalBusyIntervals,
-      maxSuggestions: SUGGESTION_LIMIT,
+      maxSuggestions: TOTAL_SUGGESTION_TARGET,
       defaultSlotDurationMinutes: DEFAULT_EVENT_DURATION_MINUTES,
-      seedKey: familyId || currentUserId || 'famtime',
+      seedKey: `${familyId || currentUserId || 'famtime'}-${suggestionSeed}`,
     });
 
     const slots = Array.isArray(availabilityResult.slots)
@@ -982,25 +992,53 @@ const FamilyEventsScreen = () => {
       return;
     }
 
-    const nextSuggestions = slots.map((slot, index) => ({
+    let nextSuggestions = slots.map((slot, index) => ({
       id: `${slot.start.getTime()}-${slot.end.getTime()}-${index}`,
       start: slot.start,
       end: slot.end,
     }));
 
+    if (avoidSuggestionDateKey && nextSuggestions.length) {
+      const alternativeIndex = nextSuggestions.findIndex(
+        (item) => getDateKey(item.start) !== avoidSuggestionDateKey
+      );
+      if (alternativeIndex > 0) {
+        nextSuggestions = [
+          ...nextSuggestions.slice(alternativeIndex),
+          ...nextSuggestions.slice(0, alternativeIndex),
+        ];
+      }
+    }
+
+    const limitedSuggestions = nextSuggestions.slice(0, SUGGESTION_LIMIT);
+
     setSuggestionNotice('');
-    setSuggestions(nextSuggestions);
+    setSuggestions(limitedSuggestions);
+    setAvoidSuggestionDateKey('');
     setSelectedSuggestionId(null);
-    setActiveSlotId(nextSuggestions[0]?.id ?? null);
+    setActiveSlotId(limitedSuggestions[0]?.id ?? null);
   }, [
     calendarEntries,
     availabilityUserPreferences,
     globalBusyIntervals,
+    suggestionSeed,
+    familyId,
+    currentUserId,
+    avoidSuggestionDateKey,
   ]);
 
   useEffect(() => {
     buildSuggestions();
   }, [buildSuggestions]);
+
+  const handleRegenerateSuggestions = () => {
+    const currentFirst = sortedSuggestions[0];
+    const dateKey = currentFirst ? getDateKey(currentFirst.start) : '';
+    if (dateKey) {
+      setAvoidSuggestionDateKey(dateKey);
+    }
+    setSuggestionSeed((prev) => prev + 1);
+  };
 
   const handleSelectSuggestion = (suggestion) => {
     setSelectedSuggestionId(suggestion.id);
@@ -1936,42 +1974,49 @@ const initializeCalendarContext = useCallback(
                     </View>
 
                     {sortedSuggestions.length ? (
-                      <ScrollView
-                        horizontal
-                        showsHorizontalScrollIndicator={false}
-                        style={styles.slotScrollWrapper}
-                        contentContainerStyle={styles.slotScrollContent}
-                      >
-                        {sortedSuggestions.map((suggestion) => {
-                          const isActive =
-                            activeSuggestion && suggestion.id === activeSuggestion.id;
-                          return (
-                            <Pressable
-                              key={suggestion.id}
-                              onPress={() => handleSelectSuggestion(suggestion)}
-                              style={[
-                                styles.slotCard,
-                                isActive ? styles.slotCardActive : null,
-                              ]}
-                              accessibilityRole="button"
-                              accessibilityState={{ selected: isActive }}
-                              accessibilityLabel={`Ledig dato ${formatDateBadge(
-                                suggestion.start
-                              )}`}
-                            >
-                              <Text style={styles.slotDate}>
-                                {formatDateBadge(suggestion.start)}
-                              </Text>
-                              <Text style={styles.slotTime}>
-                                {formatTimeRange(suggestion.start, suggestion.end)}
-                              </Text>
-                              {isActive && activeDurationLabel ? (
-                                <Text style={styles.slotDuration}>{activeDurationLabel}</Text>
-                              ) : null}
-                            </Pressable>
-                          );
-                        })}
-                      </ScrollView>
+                      <>
+                        <ScrollView
+                          horizontal
+                          showsHorizontalScrollIndicator={false}
+                          style={styles.slotScrollWrapper}
+                          contentContainerStyle={styles.slotScrollContent}
+                        >
+                          {sortedSuggestions.map((suggestion) => {
+                            const isActive =
+                              activeSuggestion && suggestion.id === activeSuggestion.id;
+                            return (
+                              <Pressable
+                                key={suggestion.id}
+                                onPress={() => handleSelectSuggestion(suggestion)}
+                                style={[
+                                  styles.slotCard,
+                                  isActive ? styles.slotCardActive : null,
+                                ]}
+                                accessibilityRole="button"
+                                accessibilityState={{ selected: isActive }}
+                                accessibilityLabel={`Ledig dato ${formatDateBadge(
+                                  suggestion.start
+                                )}`}
+                              >
+                                <Text style={styles.slotDate}>
+                                  {formatDateBadge(suggestion.start)}
+                                </Text>
+                                <Text style={styles.slotTime}>
+                                  {formatTimeRange(suggestion.start, suggestion.end)}
+                                </Text>
+                                {isActive && activeDurationLabel ? (
+                                  <Text style={styles.slotDuration}>{activeDurationLabel}</Text>
+                                ) : null}
+                              </Pressable>
+                            );
+                          })}
+                        </ScrollView>
+                        <Button
+                          title="Få 6 nye forslag"
+                          onPress={handleRegenerateSuggestions}
+                          style={styles.newSuggestionsButton}
+                        />
+                      </>
                     ) : (
                       <Text style={styles.suggestionEmptyText}>
                         Ingen ledige datoer fundet endnu. Opdater familiepræferencer
@@ -1983,7 +2028,7 @@ const initializeCalendarContext = useCallback(
                   <View style={styles.sectionCard}>
                     <View style={styles.sectionHeader}>
                       <View style={styles.sectionTitleRow}>
-                        <Text style={styles.sectionTitle}>humørkort</Text>
+                        <Text style={styles.sectionTitle}>Humørkort</Text>
                         {moodMetaText ? (
                           <Text style={styles.sectionMeta}>{moodMetaText}</Text>
                         ) : null}

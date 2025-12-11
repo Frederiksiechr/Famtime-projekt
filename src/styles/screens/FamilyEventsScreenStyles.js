@@ -187,6 +187,11 @@ const styles = StyleSheet.create({
     color: colors.mutedText,
     fontWeight: '600',
   },
+  newSuggestionsButton: {
+    alignSelf: 'center',
+    marginTop: spacing.sm,
+    minWidth: 220,
+  },
   moodScrollWrapper: {
     marginTop: spacing.sm,
     marginBottom: spacing.lg,
