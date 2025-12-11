@@ -89,7 +89,7 @@ const styles = StyleSheet.create({
   },
   aiBlock: {
     marginTop: spacing.md,
-    marginBottom: spacing.md,
+    marginBottom: spacing.sm,
   },
   sectionCard: {
     backgroundColor: colors.surface,
@@ -129,7 +129,7 @@ const styles = StyleSheet.create({
   },
   selectedTimeCard: {
     marginTop: spacing.sm,
-    marginBottom: spacing.md,
+    marginBottom: 0,
     paddingVertical: spacing.sm,
     paddingHorizontal: spacing.md,
     borderRadius: radius.lg,
@@ -291,7 +291,7 @@ const styles = StyleSheet.create({
     textAlignVertical: 'top',
   },
   moodPrimaryButton: {
-    marginTop: spacing.sm,
+    marginTop: spacing.xs,
   },
   moodHelper: {
     fontSize: fontSizes.sm,

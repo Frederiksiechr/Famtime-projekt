@@ -97,13 +97,14 @@ const styles = StyleSheet.create({
   inlineContainer: {
     marginTop: spacing.md,
     marginBottom: spacing.md,
-    alignItems: 'flex-start',
+    alignItems: 'center',
     gap: spacing.xs,
   },
   inlineControls: {
     flexDirection: 'row',
     flexWrap: 'wrap',
     alignItems: 'center',
+    justifyContent: 'center',
     gap: spacing.sm,
   },
   inlineMoodSelector: {
@@ -119,14 +120,17 @@ const styles = StyleSheet.create({
   inlineCaption: {
     fontSize: fontSizes.xs,
     color: colors.mutedText,
+    textAlign: 'center',
   },
   inlineHint: {
     fontSize: fontSizes.xs,
     color: colors.mutedText,
+    textAlign: 'center',
   },
   inlineError: {
     fontSize: fontSizes.xs,
     color: colors.error,
+    textAlign: 'center',
   },
   moodModalBackdrop: {
     flex: 1,
