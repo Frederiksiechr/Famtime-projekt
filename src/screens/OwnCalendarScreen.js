@@ -2035,7 +2035,8 @@ const OwnCalendarScreen = () => {
               const headerTitle = showNewSchedule ? pendingTitle || event.title : event.title;
               const headerStart = showNewSchedule ? pendingStart || event.start : event.start;
               const headerEnd = showNewSchedule ? pendingEnd || event.end : event.end;
-              const showAdminCancel = isAdminUser;
+              const showAdminCancel =
+                isAdminUser && !(event.status === 'pending' && pendingList.includes(currentUserId));
 
               return (
                 <View key={event.id} style={styles.eventCard}>
