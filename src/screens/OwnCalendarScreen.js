@@ -2007,26 +2007,11 @@ const OwnCalendarScreen = () => {
       const headerTitle = showNewSchedule ? pendingTitle || event.title : event.title;
       const headerStart = showNewSchedule ? pendingStart || event.start : event.start;
       const headerEnd = showNewSchedule ? pendingEnd || event.end : event.end;
-      const headerNote = hasPendingChange
-        ? pendingIsCancel
-          ? 'Forslag: Aflysning'
-          : 'Forslag: Nyt tidspunkt'
-        : null;
 
       return (
       <View key={event.id} style={styles.eventCard}>
         <View style={styles.eventHeader}>
-          <View style={styles.eventHeaderText}>
-            {headerNote ? (
-              <View
-                style={[
-                  styles.eventChangeBadge,
-                  pendingIsCancel ? styles.eventChangeBadgeCancel : styles.eventChangeBadgeUpdate,
-                ]}
-              >
-                <Text style={styles.eventChangeBadgeText}>{headerNote}</Text>
-              </View>
-            ) : null}
+            <View style={styles.eventHeaderText}>
             <Text style={styles.eventTitle}>{headerTitle}</Text>
             <Text style={styles.eventTime}>
               {formatDateRange(headerStart, headerEnd)}
@@ -2363,7 +2348,7 @@ const OwnCalendarScreen = () => {
     );
   };
 
-  const shouldShowStatusCard = Boolean(error || statusMessage || infoMessage || loading);
+  const shouldShowStatusCard = Boolean(error);
 
   return (
     <>
@@ -2386,19 +2371,6 @@ const OwnCalendarScreen = () => {
             {shouldShowStatusCard ? (
               <View style={styles.messagesCard}>
                 <ErrorMessage message={error} />
-                {statusMessage ? (
-                  <View style={styles.statusPill}>
-                    <Text style={styles.statusText}>{statusMessage}</Text>
-                  </View>
-                ) : null}
-                {infoMessage ? (
-                  <View style={styles.infoPill}>
-                    <Text style={styles.infoText}>{infoMessage}</Text>
-                  </View>
-                ) : null}
-                {loading ? (
-                  <Text style={styles.infoText}>Indlæser begivenheder...</Text>
-                ) : null}
               </View>
             ) : null}
 
