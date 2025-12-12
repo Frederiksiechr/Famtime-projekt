@@ -275,7 +275,6 @@ const OwnCalendarScreen = () => {
   const [showProposalEndPicker, setShowProposalEndPicker] = useState(isIOS);
   const [suggestions, setSuggestions] = useState([]);
   const [selectedSuggestionId, setSelectedSuggestionId] = useState(null);
-  const [cancelProposal, setCancelProposal] = useState(false);
   const [expandedEventIds, setExpandedEventIds] = useState(() => new Set());
   const [collapsedSections, setCollapsedSections] = useState({});
   const [deviceCalendarSource, setDeviceCalendarSource] = useState({
@@ -358,7 +357,6 @@ const OwnCalendarScreen = () => {
     setShowProposalEndPicker(isIOS);
     setSuggestions([]);
     setSelectedSuggestionId(null);
-    setCancelProposal(false);
   }, []);
 
   const openProposalModal = useCallback(
@@ -388,21 +386,11 @@ const OwnCalendarScreen = () => {
       setProposalSaving(false);
       setShowProposalStartPicker(isIOS);
       setShowProposalEndPicker(isIOS);
-      setCancelProposal(Boolean(event?.pendingChange?.cancel));
       setSelectedSuggestionId(null);
       setSuggestions([]);
       setProposalVisible(true);
     },
     [setProposalVisible]
-  );
-
-
-  const openCancellationModal = useCallback(
-    (event) => {
-      openProposalModal(event);
-      setCancelProposal(true);
-    },
-    [openProposalModal]
   );
 
   const closeProposalModal = useCallback(() => {
@@ -415,23 +403,6 @@ const OwnCalendarScreen = () => {
     (event) => event?.status === 'pending' || Boolean(event?.pendingChange),
     []
   );
-
-  const proposalEventIsFullyConfirmed = useMemo(() => {
-    if (!proposalEvent) {
-      return false;
-    }
-    return (
-      proposalEvent.status === 'confirmed' && !requiresRenewedApproval(proposalEvent)
-    );
-  }, [proposalEvent, requiresRenewedApproval]);
-
-  const canUseCancellationToggle = Boolean(proposalEvent) && !proposalEventIsFullyConfirmed;
-
-  useEffect(() => {
-    if (!canUseCancellationToggle && cancelProposal) {
-      setCancelProposal(false);
-    }
-  }, [canUseCancellationToggle, cancelProposal]);
 
   const eventsPendingUser = useMemo(() => {
     if (!currentUserId) {
@@ -1662,6 +1633,7 @@ const OwnCalendarScreen = () => {
           .collection('events')
           .doc(event.id)
           .delete();
+        setStatusMessage('Begivenheden er aflyst for hele familien.');
       } catch (_error) {
         setError('Kunne ikke aflyse begivenheden. Prøv igen.');
       }
@@ -1767,25 +1739,18 @@ const OwnCalendarScreen = () => {
 
     const trimmedTitle = proposalData.title.trim();
 
-    if (!cancelProposal && !trimmedTitle.length) {
+    if (!trimmedTitle.length) {
       setProposalError('Tilføj en titel til begivenheden.');
       return;
     }
 
-    if (!cancelProposal) {
-      if (!(proposalData.start instanceof Date) || !(proposalData.end instanceof Date)) {
-        setProposalError('Start og slut skal være gyldige tidspunkter.');
-        return;
-      }
-
-      if (proposalData.end <= proposalData.start) {
-        setProposalError('Sluttidspunkt skal være efter starttidspunkt.');
-        return;
-      }
+    if (!(proposalData.start instanceof Date) || !(proposalData.end instanceof Date)) {
+      setProposalError('Start og slut skal være gyldige tidspunkter.');
+      return;
     }
 
-    if (cancelProposal && proposalEventIsFullyConfirmed) {
-      setProposalError('Kun administratorer kan aflyse en bekræftet begivenhed.');
+    if (proposalData.end <= proposalData.start) {
+      setProposalError('Sluttidspunkt skal være efter starttidspunkt.');
       return;
     }
 
@@ -1796,17 +1761,12 @@ const OwnCalendarScreen = () => {
     const memberIds = await computeMemberIds();
     const pendingApprovals = memberIds.filter((id) => id !== currentUserId);
 
-    const changePayload = cancelProposal
-      ? {
-          cancel: true,
-          description: proposalData.description.trim(),
-        }
-      : {
-          title: trimmedTitle,
-          description: proposalData.description.trim(),
-          start: firebase.firestore.Timestamp.fromDate(proposalData.start),
-          end: firebase.firestore.Timestamp.fromDate(proposalData.end),
-        };
+    const changePayload = {
+      title: trimmedTitle,
+      description: proposalData.description.trim(),
+      start: firebase.firestore.Timestamp.fromDate(proposalData.start),
+      end: firebase.firestore.Timestamp.fromDate(proposalData.end),
+    };
 
     try {
       await db
@@ -1827,11 +1787,7 @@ const OwnCalendarScreen = () => {
           { merge: true }
         );
 
-      setStatusMessage(
-        cancelProposal
-          ? 'Forslaget om at aflyse begivenheden er sendt til familien.'
-          : 'Forslaget er sendt til familien.'
-      );
+      setStatusMessage('Forslaget er sendt til familien.');
       closeProposalModal();
     } catch (_error) {
       setProposalError('Kunne ikke sende forslaget. Prøv igen.');
@@ -1849,8 +1805,6 @@ const OwnCalendarScreen = () => {
     proposalData.start,
     proposalData.title,
     proposalEvent,
-    cancelProposal,
-    proposalEventIsFullyConfirmed,
   ]);
 
   const renderEventSection = (
@@ -2081,7 +2035,7 @@ const OwnCalendarScreen = () => {
               const headerTitle = showNewSchedule ? pendingTitle || event.title : event.title;
               const headerStart = showNewSchedule ? pendingStart || event.start : event.start;
               const headerEnd = showNewSchedule ? pendingEnd || event.end : event.end;
-              const showAdminCancel = isAdminUser && isEventFullyConfirmed;
+              const showAdminCancel = isAdminUser;
 
               return (
                 <View key={event.id} style={styles.eventCard}>
@@ -2210,15 +2164,6 @@ const OwnCalendarScreen = () => {
                         />
                       ) : null}
                     </>
-                  ) : null}
-                  {event.status === 'pending' &&
-                  !pendingList.includes(currentUserId) &&
-                  (event.createdByUid ? event.createdByUid === currentUserId : true) ? (
-                    <Button
-                      title="Aflys begivenhed"
-                      onPress={() => openCancellationModal(event)}
-                      style={[styles.eventActionButton, styles.eventRejectButton]}
-                    />
                   ) : null}
                   {showAdminCancel ? (
                     <Button
@@ -2534,102 +2479,72 @@ const OwnCalendarScreen = () => {
                     }
                     multiline
                   />
-
-                  {canUseCancellationToggle ? (
-                    <>
-                      <Button
-                        title={cancelProposal ? 'Fortryd aflysning' : 'Aflys begivenhed'}
-                        onPress={() => setCancelProposal((prev) => !prev)}
-                        style={cancelProposal ? styles.cancelToggleActive : styles.cancelToggle}
-                      />
-                      {cancelProposal ? (
-                        <Text style={styles.cancelHint}>
-                          Når familien godkender forslaget, bliver begivenheden aflyst og fjernet fra
-                          kalendere.
-                        </Text>
-                      ) : (
-                        <Text style={styles.cancelHint}>
-                          Hvis du ønsker at aflyse begivenheden helt, kan du slå aflysning til.
-                        </Text>
-                      )}
-                    </>
-                  ) : null}
-                  {proposalEventIsFullyConfirmed ? (
-                    <Text style={styles.cancelHint}>
-                      Kun administratorer kan aflyse en bekræftet begivenhed.
+                  <Text style={styles.modalLabel}>Starttidspunkt</Text>
+                  <Pressable
+                    style={styles.modalDateButton}
+                    onPress={() => setShowProposalStartPicker(true)}
+                  >
+                    <Text style={styles.modalDateText}>
+                      {formatDateTime(proposalData.start)}
                     </Text>
-                  ) : null}
+                  </Pressable>
+                  {(isIOS || showProposalStartPicker) && (
+                    <DateTimePicker
+                      value={proposalData.start}
+                      mode="datetime"
+                      display={isIOS ? 'inline' : 'default'}
+                      onChange={handleProposalStartChange}
+                    />
+                  )}
 
-                  {!cancelProposal ? (
-                    <>
-                      <Text style={styles.modalLabel}>Starttidspunkt</Text>
-                      <Pressable
-                        style={styles.modalDateButton}
-                        onPress={() => setShowProposalStartPicker(true)}
-                      >
-                        <Text style={styles.modalDateText}>
-                          {formatDateTime(proposalData.start)}
-                        </Text>
-                      </Pressable>
-                      {(isIOS || showProposalStartPicker) && (
-                        <DateTimePicker
-                          value={proposalData.start}
-                          mode="datetime"
-                          display={isIOS ? 'inline' : 'default'}
-                          onChange={handleProposalStartChange}
-                        />
-                      )}
+                  <Text style={styles.modalLabel}>Sluttidspunkt</Text>
+                  <Pressable
+                    style={styles.modalDateButton}
+                    onPress={() => setShowProposalEndPicker(true)}
+                  >
+                    <Text style={styles.modalDateText}>
+                      {formatDateTime(proposalData.end)}
+                    </Text>
+                  </Pressable>
+                  {(isIOS || showProposalEndPicker) && (
+                    <DateTimePicker
+                      value={proposalData.end}
+                      mode="datetime"
+                      display={isIOS ? 'inline' : 'default'}
+                      onChange={handleProposalEndChange}
+                    />
+                  )}
 
-                      <Text style={styles.modalLabel}>Sluttidspunkt</Text>
-                      <Pressable
-                        style={styles.modalDateButton}
-                        onPress={() => setShowProposalEndPicker(true)}
-                      >
-                        <Text style={styles.modalDateText}>
-                          {formatDateTime(proposalData.end)}
-                        </Text>
-                      </Pressable>
-                      {(isIOS || showProposalEndPicker) && (
-                        <DateTimePicker
-                          value={proposalData.end}
-                          mode="datetime"
-                          display={isIOS ? 'inline' : 'default'}
-                          onChange={handleProposalEndChange}
-                        />
-                      )}
-
-                      <Text style={styles.modalLabel}>Hurtige forslag</Text>
-                      {suggestions.length ? (
-                        <View style={styles.suggestionsWrap}>
-                          {suggestions.map((suggestion) => (
-                            <Pressable
-                              key={suggestion.id}
-                              onPress={() => handleSelectSuggestion(suggestion)}
-                              style={[
-                                styles.suggestionChip,
-                                selectedSuggestionId === suggestion.id
-                                  ? styles.suggestionChipSelected
-                                  : null,
-                              ]}
-                            >
-                              <Text style={styles.suggestionText}>
-                                {formatDateTime(suggestion.start)}
-                              </Text>
-                            </Pressable>
-                          ))}
-                        </View>
-                      ) : (
-                        <Text style={styles.modalHint}>
-                          Ingen oplagte tider i de næste dage. Du kan vælge tidspunkt manuelt.
-                        </Text>
-                      )}
-                    </>
-                  ) : null}
+                  <Text style={styles.modalLabel}>Hurtige forslag</Text>
+                  {suggestions.length ? (
+                    <View style={styles.suggestionsWrap}>
+                      {suggestions.map((suggestion) => (
+                        <Pressable
+                          key={suggestion.id}
+                          onPress={() => handleSelectSuggestion(suggestion)}
+                          style={[
+                            styles.suggestionChip,
+                            selectedSuggestionId === suggestion.id
+                              ? styles.suggestionChipSelected
+                              : null,
+                          ]}
+                        >
+                          <Text style={styles.suggestionText}>
+                            {formatDateTime(suggestion.start)}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  ) : (
+                    <Text style={styles.modalHint}>
+                      Ingen oplagte tider i de næste dage. Du kan vælge tidspunkt manuelt.
+                    </Text>
+                  )}
 
                   <ErrorMessage message={proposalError} />
 
                   <Button
-                    title={cancelProposal ? 'Send aflysning' : 'Send forslag'}
+                    title="Send forslag"
                     onPress={handleSubmitProposal}
                     loading={proposalSaving}
                     style={styles.modalPrimaryButton}
