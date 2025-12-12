@@ -155,9 +155,10 @@ const styles = StyleSheet.create({
   },
   infoLabel: {
     fontSize: fontSizes.xs,
-    color: colors.mutedText,
+    color: colors.border,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
+    fontWeight: '700',
   },
   infoValue: {
     fontSize: fontSizes.md,
@@ -202,16 +203,20 @@ const styles = StyleSheet.create({
   },
   preferenceHighlightLabel: {
     fontSize: fontSizes.xs,
-    color: colors.mutedText,
+    color: colors.border,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     textAlign: 'center',
+    fontWeight: '700',
   },
   preferenceHighlightValue: {
     fontSize: fontSizes.sm,
     fontWeight: '600',
     color: colors.text,
     marginTop: spacing.xs,
+  },
+  preferenceHighlightValueMultiline: {
+    lineHeight: fontSizes.md * 1.4,
   },
   memberText: {
     fontSize: fontSizes.md,

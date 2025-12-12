@@ -1017,7 +1017,16 @@ const AccountSettingsScreen = ({ navigation }) => {
                       style={styles.preferenceHighlightCardFull}
                     >
                       <Text style={styles.preferenceHighlightLabel}>{item.label}</Text>
-                      <Text style={styles.preferenceHighlightValue}>{item.value}</Text>
+                      <Text
+                        style={[
+                          styles.preferenceHighlightValue,
+                          item.key === 'times'
+                            ? styles.preferenceHighlightValueMultiline
+                            : null,
+                        ]}
+                      >
+                        {item.value}
+                      </Text>
                     </View>
                   ))}
                   {halfWidthHighlights.length ? (
@@ -1028,7 +1037,16 @@ const AccountSettingsScreen = ({ navigation }) => {
                           style={styles.preferenceHighlightCardHalf}
                         >
                           <Text style={styles.preferenceHighlightLabel}>{item.label}</Text>
-                          <Text style={styles.preferenceHighlightValue}>{item.value}</Text>
+                          <Text
+                            style={[
+                              styles.preferenceHighlightValue,
+                              item.key === 'times'
+                                ? styles.preferenceHighlightValueMultiline
+                                : null,
+                            ]}
+                          >
+                            {item.value}
+                          </Text>
                         </View>
                       ))}
                     </View>
