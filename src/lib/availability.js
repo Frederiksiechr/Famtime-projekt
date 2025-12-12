@@ -21,8 +21,8 @@ const DEFAULT_TIME_ZONE = 'UTC';
 const DANISH_TIME_ZONE = 'Europe/Copenhagen';
 const SLOT_ALIGN_MINUTES = 15;
 const QUIET_START_MINUTES = 6 * 60; // 06:00
-const DEFAULT_WEEKDAY_WINDOW = [{ start: 16 * 60, end: 23 * 60 + 59 }];
-const DEFAULT_WEEKEND_WINDOW = [{ start: 10 * 60, end: 23 * 60 + 59 }];
+const DEFAULT_WEEKDAY_WINDOW = [{ start: 13 * 60 + 30, end: 23 * 60 + 59 }];
+const DEFAULT_WEEKEND_WINDOW = [{ start: 8 * 60, end: 23 * 60 + 59 }];
 const WORK_DAY_SET = new Set(['Mon', 'Tue', 'Wed', 'Thu']);
 const WEEKEND_DAY_SET = new Set(['Fri', 'Sat', 'Sun']);
 const MAX_WEEKDAY_DURATION_MINUTES = 180;
@@ -1014,6 +1014,10 @@ const generateCandidateSlots = (intervals, constraints, targetTotal, seedKey, pl
       const weekdayIndexes = bundles
         .map((bundle, index) => ({ index, bundle }))
         .filter(({ bundle }) => WORK_DAY_SET.has(bundle.group.dayKey));
+
+      if (!weekdayIndexes.length && weekendIndexes.length === bundles.length) {
+        break;
+      }
 
       let dropIndex = -1;
       if (weekendIndexes.length) {
