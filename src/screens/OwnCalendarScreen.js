@@ -17,6 +17,7 @@ import {
   Platform,
   KeyboardAvoidingView,
   AppState,
+  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -250,6 +251,13 @@ const OwnCalendarScreen = () => {
     return map;
   }, [familyMembers, memberProfiles]);
   const [userRole, setUserRole] = useState('');
+  const normalizedUserRole = useMemo(() => {
+    if (typeof userRole !== 'string') {
+      return '';
+    }
+    return userRole.trim().toLowerCase();
+  }, [userRole]);
+  const isAdminUser = normalizedUserRole === 'admin' || normalizedUserRole === 'owner';
   const [events, setEvents] = useState([]);
 
   const [proposalVisible, setProposalVisible] = useState(false);
@@ -407,6 +415,23 @@ const OwnCalendarScreen = () => {
     (event) => event?.status === 'pending' || Boolean(event?.pendingChange),
     []
   );
+
+  const proposalEventIsFullyConfirmed = useMemo(() => {
+    if (!proposalEvent) {
+      return false;
+    }
+    return (
+      proposalEvent.status === 'confirmed' && !requiresRenewedApproval(proposalEvent)
+    );
+  }, [proposalEvent, requiresRenewedApproval]);
+
+  const canUseCancellationToggle = Boolean(proposalEvent) && !proposalEventIsFullyConfirmed;
+
+  useEffect(() => {
+    if (!canUseCancellationToggle && cancelProposal) {
+      setCancelProposal(false);
+    }
+  }, [canUseCancellationToggle, cancelProposal]);
 
   const eventsPendingUser = useMemo(() => {
     if (!currentUserId) {
@@ -1624,6 +1649,47 @@ const OwnCalendarScreen = () => {
     [familyId]
   );
 
+  const handleAdminCancelEvent = useCallback(
+    async (event) => {
+      if (!familyId || !event?.id) {
+        return;
+      }
+
+      try {
+        await db
+          .collection('families')
+          .doc(familyId)
+          .collection('events')
+          .doc(event.id)
+          .delete();
+      } catch (_error) {
+        setError('Kunne ikke aflyse begivenheden. Prøv igen.');
+      }
+    },
+    [familyId]
+  );
+
+  const confirmAdminCancelEvent = useCallback(
+    (event) => {
+      if (!event) {
+        return;
+      }
+      Alert.alert(
+        'Aflys begivenhed',
+        'Er du sikker på, at du vil aflyse denne begivenhed for hele familien?',
+        [
+          { text: 'Behold', style: 'cancel' },
+          {
+            text: 'Aflys begivenhed',
+            style: 'destructive',
+            onPress: () => handleAdminCancelEvent(event),
+          },
+        ]
+      );
+    },
+    [handleAdminCancelEvent]
+  );
+
   const handleProposalStartChange = useCallback(
     (_event, selectedDate) => {
       if (selectedDate) {
@@ -1718,6 +1784,11 @@ const OwnCalendarScreen = () => {
       }
     }
 
+    if (cancelProposal && proposalEventIsFullyConfirmed) {
+      setProposalError('Kun administratorer kan aflyse en bekræftet begivenhed.');
+      return;
+    }
+
     setProposalSaving(true);
     setProposalError('');
     setStatusMessage('');
@@ -1779,6 +1850,7 @@ const OwnCalendarScreen = () => {
     proposalData.title,
     proposalEvent,
     cancelProposal,
+    proposalEventIsFullyConfirmed,
   ]);
 
   const renderEventSection = (
@@ -1982,64 +2054,67 @@ const OwnCalendarScreen = () => {
                 pendingCount > 0
                   ? pendingCount === 1
                     ? 'Afventer 1 familiemedlem'
-            : `Afventer ${pendingCount} familiemedlemmer`
-          : 'Alle medlemmer har godkendt.';
-      const hasExpandableDetails =
-        Boolean(event.description) || Boolean(event.pendingChange);
-      const isExpanded = expandedEventIds.has(event.id);
-      const hasPendingChange = Boolean(event.pendingChange);
-      const pendingIsCancel = Boolean(event.pendingChange?.cancel);
-      const pendingTitle =
-        hasPendingChange &&
-        typeof event.pendingChange?.title === 'string' &&
-        event.pendingChange.title.trim().length
-          ? event.pendingChange.title.trim()
-          : null;
-      const pendingStart =
-        hasPendingChange && event.pendingChange?.start instanceof Date
-          ? event.pendingChange.start
-          : null;
-      const pendingEnd =
-        hasPendingChange && event.pendingChange?.end instanceof Date
-          ? event.pendingChange.end
-          : null;
-      const showNewSchedule = hasPendingChange && !pendingIsCancel;
-      const headerTitle = showNewSchedule ? pendingTitle || event.title : event.title;
-      const headerStart = showNewSchedule ? pendingStart || event.start : event.start;
-      const headerEnd = showNewSchedule ? pendingEnd || event.end : event.end;
+                    : `Afventer ${pendingCount} familiemedlemmer`
+                  : 'Alle medlemmer har godkendt.';
+              const isEventFullyConfirmed =
+                event.status === 'confirmed' && !requiresRenewedApproval(event);
+              const hasExpandableDetails =
+                Boolean(event.description) || Boolean(event.pendingChange);
+              const isExpanded = expandedEventIds.has(event.id);
+              const hasPendingChange = Boolean(event.pendingChange);
+              const pendingIsCancel = Boolean(event.pendingChange?.cancel);
+              const pendingTitle =
+                hasPendingChange &&
+                typeof event.pendingChange?.title === 'string' &&
+                event.pendingChange.title.trim().length
+                  ? event.pendingChange.title.trim()
+                  : null;
+              const pendingStart =
+                hasPendingChange && event.pendingChange?.start instanceof Date
+                  ? event.pendingChange.start
+                  : null;
+              const pendingEnd =
+                hasPendingChange && event.pendingChange?.end instanceof Date
+                  ? event.pendingChange.end
+                  : null;
+              const showNewSchedule = hasPendingChange && !pendingIsCancel;
+              const headerTitle = showNewSchedule ? pendingTitle || event.title : event.title;
+              const headerStart = showNewSchedule ? pendingStart || event.start : event.start;
+              const headerEnd = showNewSchedule ? pendingEnd || event.end : event.end;
+              const showAdminCancel = isAdminUser && isEventFullyConfirmed;
 
-      return (
-      <View key={event.id} style={styles.eventCard}>
-        <View style={styles.eventHeader}>
-            <View style={styles.eventHeaderText}>
-            <Text style={styles.eventTitle}>{headerTitle}</Text>
-            <Text style={styles.eventTime}>
-              {formatDateRange(headerStart, headerEnd)}
-            </Text>
-          </View>
-          {hasExpandableDetails ? (
-            <Pressable
-              onPress={() => toggleEventDetails(event.id)}
-                      accessibilityRole="button"
-                      accessibilityState={{ expanded: isExpanded }}
-                      accessibilityLabel={
-                        isExpanded
-                          ? 'Skjul detaljer for begivenhed'
-                          : 'Vis detaljer for begivenhed'
-                      }
-                      style={styles.eventToggle}
-                      hitSlop={12}
-                    >
-                      <Ionicons
-                        name={isExpanded ? 'eye-off-outline' : 'eye-outline'}
-                        style={[
-                          styles.eventToggleIcon,
-                          isExpanded ? styles.eventToggleIconActive : null,
-                        ]}
-                      />
-                    </Pressable>
-                  ) : null}
-                </View>
+              return (
+                <View key={event.id} style={styles.eventCard}>
+                  <View style={styles.eventHeader}>
+                    <View style={styles.eventHeaderText}>
+                      <Text style={styles.eventTitle}>{headerTitle}</Text>
+                      <Text style={styles.eventTime}>
+                        {formatDateRange(headerStart, headerEnd)}
+                      </Text>
+                    </View>
+                    {hasExpandableDetails ? (
+                      <Pressable
+                        onPress={() => toggleEventDetails(event.id)}
+                        accessibilityRole="button"
+                        accessibilityState={{ expanded: isExpanded }}
+                        accessibilityLabel={
+                          isExpanded
+                            ? 'Skjul detaljer for begivenhed'
+                            : 'Vis detaljer for begivenhed'
+                        }
+                        style={styles.eventToggle}
+                        hitSlop={12}
+                      >
+                        <Ionicons
+                          name={isExpanded ? 'eye-off-outline' : 'eye-outline'}
+                          style={[
+                            styles.eventToggleIcon,
+                            isExpanded ? styles.eventToggleIconActive : null,
+                          ]}
+                        />
+                      </Pressable>
+                    ) : null}
+                  </View>
 
                   <View style={styles.approvalRow}>
                     <Text style={styles.eventMeta}>{statusText}</Text>
@@ -2142,6 +2217,13 @@ const OwnCalendarScreen = () => {
                     <Button
                       title="Aflys begivenhed"
                       onPress={() => openCancellationModal(event)}
+                      style={[styles.eventActionButton, styles.eventRejectButton]}
+                    />
+                  ) : null}
+                  {showAdminCancel ? (
+                    <Button
+                      title="Aflys begivenhed"
+                      onPress={() => confirmAdminCancelEvent(event)}
                       style={[styles.eventActionButton, styles.eventRejectButton]}
                     />
                   ) : null}
@@ -2453,21 +2535,30 @@ const OwnCalendarScreen = () => {
                     multiline
                   />
 
-                  <Button
-                    title={cancelProposal ? 'Fortryd aflysning' : 'Aflys begivenhed'}
-                    onPress={() => setCancelProposal((prev) => !prev)}
-                    style={cancelProposal ? styles.cancelToggleActive : styles.cancelToggle}
-                  />
-                  {cancelProposal ? (
+                  {canUseCancellationToggle ? (
+                    <>
+                      <Button
+                        title={cancelProposal ? 'Fortryd aflysning' : 'Aflys begivenhed'}
+                        onPress={() => setCancelProposal((prev) => !prev)}
+                        style={cancelProposal ? styles.cancelToggleActive : styles.cancelToggle}
+                      />
+                      {cancelProposal ? (
+                        <Text style={styles.cancelHint}>
+                          Når familien godkender forslaget, bliver begivenheden aflyst og fjernet fra
+                          kalendere.
+                        </Text>
+                      ) : (
+                        <Text style={styles.cancelHint}>
+                          Hvis du ønsker at aflyse begivenheden helt, kan du slå aflysning til.
+                        </Text>
+                      )}
+                    </>
+                  ) : null}
+                  {proposalEventIsFullyConfirmed ? (
                     <Text style={styles.cancelHint}>
-                      Når familien godkender forslaget, bliver begivenheden aflyst og fjernet fra
-                      kalendere.
+                      Kun administratorer kan aflyse en bekræftet begivenhed.
                     </Text>
-                  ) : (
-                    <Text style={styles.cancelHint}>
-                      Hvis du ønsker at aflyse begivenheden helt, kan du slå aflysning til.
-                    </Text>
-                  )}
+                  ) : null}
 
                   {!cancelProposal ? (
                     <>
