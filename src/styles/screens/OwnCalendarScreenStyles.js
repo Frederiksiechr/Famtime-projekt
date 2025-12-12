@@ -126,9 +126,27 @@ const styles = StyleSheet.create({
     alignItems: 'flex-start',
     gap: spacing.md,
   },
+  sectionHeaderTextWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+  },
   sectionHeaderText: {
     flex: 1,
     gap: spacing.xs,
+  },
+  sectionCollapseButton: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sectionCollapseIcon: {
+    fontSize: fontSizes.lg,
+    color: colors.mutedText,
   },
   sectionBadge: {
     width: 48,

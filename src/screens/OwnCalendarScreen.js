@@ -238,6 +238,7 @@ const OwnCalendarScreen = () => {
   const [selectedSuggestionId, setSelectedSuggestionId] = useState(null);
   const [cancelProposal, setCancelProposal] = useState(false);
   const [expandedEventIds, setExpandedEventIds] = useState(() => new Set());
+  const [collapsedSections, setCollapsedSections] = useState({});
   const [deviceCalendarSource, setDeviceCalendarSource] = useState({
     ready: false,
     calendarIds: [],
@@ -254,6 +255,15 @@ const OwnCalendarScreen = () => {
   const [suggestionLoading, setSuggestionLoading] = useState(true);
   const { remoteActivities, manualActivities } = useActivityPool();
   const [previewSuggestion, setPreviewSuggestion] = useState(null);
+  const toggleSectionCollapse = useCallback((key) => {
+    if (!key) {
+      return;
+    }
+    setCollapsedSections((prev) => ({
+      ...prev,
+      [key]: !prev?.[key],
+    }));
+  }, []);
 
   useEffect(() => {
     const handleAppStateChange = (nextState) => {
@@ -609,7 +619,7 @@ const OwnCalendarScreen = () => {
       autoSlotCursorRef.current = 0;
       setAutoSuggestions([]);
       setSuggestionLoading(false);
-      setAutoSuggestionNotice('Ingen ledige tidsrum — justér præferencer.');
+      setAutoSuggestionNotice('Ingen ledige tidsrum - juster præferencer.');
       return;
     }
 
@@ -646,7 +656,7 @@ const OwnCalendarScreen = () => {
       autoSlotQueueRef.current = slots;
       autoSlotCursorRef.current = 0;
       setSuggestionLoading(false);
-      setAutoSuggestionNotice(slots.length ? '' : 'Ingen ledige tidsrum — justér præferencer.');
+      setAutoSuggestionNotice(slots.length ? '' : 'Ingen ledige tidsrum - juster præferencer.');
       setAutoSuggestions(fillVisibleSuggestions([]));
     } catch (error) {
       console.warn('[OwnCalendar] build auto suggestions', error);
@@ -672,7 +682,7 @@ const OwnCalendarScreen = () => {
   useEffect(() => {
     if (!autoSuggestions.length && !suggestionLoading) {
       if (autoSlotCursorRef.current >= autoSlotQueueRef.current.length) {
-        setAutoSuggestionNotice('Ingen ledige tidsrum — justér præferencer.');
+        setAutoSuggestionNotice('Ingen ledige tidsrum - juster præferencer.');
       }
     }
   }, [autoSuggestions.length, suggestionLoading]);
@@ -1726,8 +1736,9 @@ const OwnCalendarScreen = () => {
     emptyDescription,
     appearance = {}
   ) => {
-    const { badgeLabel = '', variant = 'default' } = appearance ?? {};
+    const { badgeLabel = '', variant = 'default', collapsibleKey } = appearance ?? {};
     const variantTheme = SECTION_VARIANTS[variant] ?? SECTION_VARIANTS.default;
+    const isCollapsed = collapsibleKey ? Boolean(collapsedSections[collapsibleKey]) : false;
 
     return (
       <View style={styles.sectionGroup}>
@@ -1761,31 +1772,54 @@ const OwnCalendarScreen = () => {
                 </Text>
               </View>
             ) : null}
-            <View style={styles.sectionHeaderText}>
-              <Text style={styles.sectionTitle}>{title}</Text>
-              {hint ? (
-                <Text
-                  style={[
-                    styles.sectionHint,
-                    { color: variantTheme.hintText ?? colors.mutedText },
-                  ]}
+            <View style={styles.sectionHeaderTextWrapper}>
+              <View style={styles.sectionHeaderText}>
+                <Text style={styles.sectionTitle}>{title}</Text>
+                {hint ? (
+                  <Text
+                    style={[
+                      styles.sectionHint,
+                      { color: variantTheme.hintText ?? colors.mutedText },
+                    ]}
+                  >
+                    {hint}
+                  </Text>
+                ) : null}
+              </View>
+              {collapsibleKey ? (
+                <Pressable
+                  onPress={() => toggleSectionCollapse(collapsibleKey)}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: !isCollapsed }}
+                  accessibilityLabel={
+                    isCollapsed
+                      ? `Vis ${title.toLowerCase()}`
+                      : `Skjul ${title.toLowerCase()}`
+                  }
+                  style={styles.sectionCollapseButton}
+                  hitSlop={12}
                 >
-                  {hint}
-                </Text>
+                  <Ionicons
+                    name={isCollapsed ? 'add-outline' : 'remove-outline'}
+                    style={styles.sectionCollapseIcon}
+                  />
+                </Pressable>
               ) : null}
             </View>
           </View>
 
-          <View
-            style={[
-              styles.sectionDivider,
-              { backgroundColor: variantTheme.dividerColor },
-            ]}
-          />
+          {isCollapsed ? null : (
+            <>
+              <View
+                style={[
+                  styles.sectionDivider,
+                  { backgroundColor: variantTheme.dividerColor },
+                ]}
+              />
 
-          <View style={styles.eventList}>
-            {items.length
-              ? items.map((event) => {
+              <View style={styles.eventList}>
+                {items.length
+                  ? items.map((event) => {
               const pendingList = Array.isArray(event.pendingApprovals)
                 ? event.pendingApprovals.filter(
                     (id) => typeof id === 'string' && id.length > 0
@@ -2090,7 +2124,9 @@ const OwnCalendarScreen = () => {
                   ) : null}
                 </View>
               )}
-          </View>
+              </View>
+            </>
+          )}
         </View>
       </View>
     );
@@ -2099,7 +2135,9 @@ const OwnCalendarScreen = () => {
   const renderAutoSuggestionSection = () => {
     const variantTheme = SECTION_VARIANTS.ideas;
     const showEmptyState = !suggestionLoading && !autoSuggestions.length;
-    const emptyLabel = autoSuggestionNotice || 'Ingen ledige tidsrum — justér præferencer.';
+    const emptyLabel = autoSuggestionNotice || 'Ingen ledige tidsrum - juster præferencer.';
+    const collapsibleKey = 'autoSuggestions';
+    const isCollapsed = Boolean(collapsedSections[collapsibleKey]);
 
     return (
       <View style={styles.sectionGroup}>
@@ -2131,82 +2169,102 @@ const OwnCalendarScreen = () => {
                 02
               </Text>
             </View>
-            <View style={styles.sectionHeaderText}>
-              <Text style={styles.sectionTitle}>Nye forslag</Text>
-              <Text
-                style={[
-                  styles.sectionHint,
-                  { color: variantTheme.hintText ?? colors.mutedText },
-                ]}
+            <View style={styles.sectionHeaderTextWrapper}>
+              <View style={styles.sectionHeaderText}>
+                <Text style={styles.sectionTitle}>Nye forslag</Text>
+                <Text
+                  style={[
+                    styles.sectionHint,
+                    { color: variantTheme.hintText ?? colors.mutedText },
+                  ]}
+                >
+                  FamTime foreslår tider hvor alle kan. Godkend for at sende til familien.
+                </Text>
+              </View>
+              <Pressable
+                onPress={() => toggleSectionCollapse(collapsibleKey)}
+                accessibilityRole="button"
+                accessibilityState={{ expanded: !isCollapsed }}
+                accessibilityLabel={
+                  isCollapsed ? 'Vis nye forslag' : 'Skjul nye forslag'
+                }
+                style={styles.sectionCollapseButton}
+                hitSlop={12}
               >
-                FamTime foreslår tider hvor alle kan. Godkend for at sende til familien.
-              </Text>
+                <Ionicons
+                  name={isCollapsed ? 'add-outline' : 'remove-outline'}
+                  style={styles.sectionCollapseIcon}
+                />
+              </Pressable>
             </View>
           </View>
 
-          <View
-            style={[
-              styles.sectionDivider,
-              { backgroundColor: variantTheme.dividerColor },
-            ]}
-          />
+          {isCollapsed ? null : (
+            <>
+              <View
+                style={[
+                  styles.sectionDivider,
+                  { backgroundColor: variantTheme.dividerColor },
+                ]}
+              />
 
-          <ErrorMessage message={autoSuggestionError} />
-          {suggestionLoading ? (
-            <Text style={styles.infoText}>Finder ledige tider...</Text>
-          ) : null}
+              <ErrorMessage message={autoSuggestionError} />
+              {suggestionLoading ? (
+                <Text style={styles.infoText}>Finder ledige tider...</Text>
+              ) : null}
 
-          {autoSuggestions.length ? (
-            <View style={styles.autoSuggestionList}>
-              {autoSuggestions.map((suggestion) => (
-                <View key={suggestion.id} style={styles.autoSuggestionCard}>
-                  <View style={styles.autoSuggestionHeader}>
-                    <Text style={styles.autoSuggestionTitle}>{suggestion.title}</Text>
-                    <Pressable
-                      onPress={() => handleOpenSuggestionPreview(suggestion)}
-                      accessibilityRole="button"
-                      accessibilityLabel={`Læs mere om ${suggestion.title}`}
-                      style={styles.autoSuggestionEyeButton}
-                    >
-                      <Ionicons name="eye-outline" style={styles.autoSuggestionEyeIcon} />
-                    </Pressable>
-                  </View>
-                  <Text style={styles.autoSuggestionTime}>
-                    {formatDateRange(suggestion.start, suggestion.end)}
-                  </Text>
-                  {suggestion.preview ? (
-                    <Text style={styles.autoSuggestionPreview}>{suggestion.preview}</Text>
-                  ) : null}
-                  <View style={styles.autoSuggestionActions}>
-                    <Button
-                      title="Godkend"
-                      onPress={() => handleAcceptAutoSuggestion(suggestion)}
-                      loading={autoActionId === suggestion.id}
-                      style={[styles.eventActionButton, styles.eventApproveButton]}
-                    />
-                    <Button
-                      title="Afvis"
-                      onPress={() => handleDismissAutoSuggestion(suggestion.id)}
-                      disabled={autoActionId === suggestion.id}
-                      style={[styles.eventActionButton, styles.eventRejectButton]}
-                    />
-                  </View>
+              {autoSuggestions.length ? (
+                <View style={styles.autoSuggestionList}>
+                  {autoSuggestions.map((suggestion) => (
+                    <View key={suggestion.id} style={styles.autoSuggestionCard}>
+                      <View style={styles.autoSuggestionHeader}>
+                        <Text style={styles.autoSuggestionTitle}>{suggestion.title}</Text>
+                        <Pressable
+                          onPress={() => handleOpenSuggestionPreview(suggestion)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Læs mere om ${suggestion.title}`}
+                          style={styles.autoSuggestionEyeButton}
+                        >
+                          <Ionicons name="eye-outline" style={styles.autoSuggestionEyeIcon} />
+                        </Pressable>
+                      </View>
+                      <Text style={styles.autoSuggestionTime}>
+                        {formatDateRange(suggestion.start, suggestion.end)}
+                      </Text>
+                      {suggestion.preview ? (
+                        <Text style={styles.autoSuggestionPreview}>{suggestion.preview}</Text>
+                      ) : null}
+                      <View style={styles.autoSuggestionActions}>
+                        <Button
+                          title="Godkend"
+                          onPress={() => handleAcceptAutoSuggestion(suggestion)}
+                          loading={autoActionId === suggestion.id}
+                          style={[styles.eventActionButton, styles.eventApproveButton]}
+                        />
+                        <Button
+                          title="Afvis"
+                          onPress={() => handleDismissAutoSuggestion(suggestion.id)}
+                          disabled={autoActionId === suggestion.id}
+                          style={[styles.eventActionButton, styles.eventRejectButton]}
+                        />
+                      </View>
+                    </View>
+                  ))}
                 </View>
-              ))}
-            </View>
-          ) : null}
+              ) : null}
 
-          {showEmptyState ? (
-            <View style={styles.emptyCard}>
-              <Text style={styles.emptyTitle}>Ingen forslag endnu</Text>
-              <Text style={styles.emptySubtitle}>{emptyLabel}</Text>
-            </View>
-          ) : null}
+              {showEmptyState ? (
+                <View style={styles.emptyCard}>
+                  <Text style={styles.emptyTitle}>Ingen forslag endnu</Text>
+                  <Text style={styles.emptySubtitle}>{emptyLabel}</Text>
+                </View>
+              ) : null}
+            </>
+          )}
         </View>
       </View>
     );
   };
-
   const renderAutoSuggestionPreviewModal = () => {
     if (!previewSuggestion) {
       return null;
@@ -2267,8 +2325,8 @@ const OwnCalendarScreen = () => {
             <View style={styles.heroCard}>
               <Text style={styles.title}>Familiens kalender</Text>
               <Text style={styles.subtitle}>
-                Godkend forslag, hold styr på afventende begivenheder, og foreslå ændringer
-                for din familie.
+                Godkend forslag, hold styr på afventende begivenheder, og foreslå ændringer for
+                din familie.
               </Text>
             </View>
 
@@ -2308,7 +2366,7 @@ const OwnCalendarScreen = () => {
               'Forslag sendt af dig eller andre familiemedlemmer, som stadig er i proces.',
               'Ingen åbne forespørgsler hos familien.',
               'Vi giver besked, så snart de andre har svaret.',
-              { badgeLabel: '03', variant: 'waiting' }
+              { badgeLabel: '03', variant: 'waiting', collapsibleKey: 'pendingOthers' }
             )}
 
             {renderEventSection(
@@ -2377,7 +2435,8 @@ const OwnCalendarScreen = () => {
                   />
                   {cancelProposal ? (
                     <Text style={styles.cancelHint}>
-                      Når familien godkender forslaget, bliver begivenheden aflyst og fjernet fra kalendere.
+                      Når familien godkender forslaget, bliver begivenheden aflyst og fjernet fra
+                      kalendere.
                     </Text>
                   ) : (
                     <Text style={styles.cancelHint}>
