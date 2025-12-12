@@ -206,18 +206,49 @@ const OwnCalendarScreen = () => {
   const [familyId, setFamilyId] = useState(null);
   const [familyName, setFamilyName] = useState('');
   const [familyMembers, setFamilyMembers] = useState([]);
+  const [memberProfiles, setMemberProfiles] = useState({});
   const [familyPreferences, setFamilyPreferences] = useState({});
   const [calendarAvailability, setCalendarAvailability] = useState({});
   const [currentUserEmoji, setCurrentUserEmoji] = useState(DEFAULT_AVATAR_EMOJI);
   const memberById = useMemo(() => {
     const map = new Map();
+    const mergeMemberData = (userId, source = {}) => {
+      const profile = memberProfiles?.[userId];
+      if (!profile) {
+        return source;
+      }
+      const merged = { ...source };
+      if (typeof profile.avatarEmoji === 'string' && profile.avatarEmoji.trim().length) {
+        merged.avatarEmoji = profile.avatarEmoji.trim();
+      }
+      if (typeof profile.displayName === 'string' && profile.displayName.trim().length) {
+        merged.displayName = profile.displayName.trim();
+      }
+      if (typeof profile.name === 'string' && profile.name.trim().length) {
+        merged.name = profile.name.trim();
+      }
+      if (typeof profile.email === 'string' && profile.email.trim().length) {
+        merged.email = profile.email.trim();
+      }
+      return merged;
+    };
+
     familyMembers.forEach((member) => {
       if (member?.userId) {
-        map.set(member.userId, member);
+        map.set(member.userId, mergeMemberData(member.userId, member));
       }
     });
+
+    if (memberProfiles && typeof memberProfiles === 'object') {
+      Object.keys(memberProfiles).forEach((userId) => {
+        if (!map.has(userId)) {
+          map.set(userId, mergeMemberData(userId, { userId }));
+        }
+      });
+    }
+
     return map;
-  }, [familyMembers]);
+  }, [familyMembers, memberProfiles]);
   const [userRole, setUserRole] = useState('');
   const [events, setEvents] = useState([]);
 
@@ -829,6 +860,7 @@ const OwnCalendarScreen = () => {
       if (!memberIds.length) {
         if (isActive) {
           setFamilyPreferences({});
+          setMemberProfiles({});
         }
         return;
       }
@@ -845,12 +877,31 @@ const OwnCalendarScreen = () => {
         );
 
         const rawPreferenceMap = {};
+        const profileMap = {};
         snapshots.forEach((docSnapshot, index) => {
           if (!docSnapshot || !docSnapshot.exists) {
             return;
           }
           const memberId = memberIds[index];
           const data = docSnapshot.data() ?? {};
+          const normalizedName =
+            typeof data.name === 'string' && data.name.trim().length ? data.name.trim() : '';
+          const normalizedDisplayName =
+            typeof data.displayName === 'string' && data.displayName.trim().length
+              ? data.displayName.trim()
+              : normalizedName;
+          const normalizedEmail =
+            typeof data.email === 'string' && data.email.trim().length ? data.email.trim() : '';
+          const avatarEmojiValue =
+            typeof data.avatarEmoji === 'string' && data.avatarEmoji.trim().length
+              ? data.avatarEmoji.trim()
+              : DEFAULT_AVATAR_EMOJI;
+          profileMap[memberId] = {
+            avatarEmoji: avatarEmojiValue,
+            displayName: normalizedDisplayName,
+            name: normalizedName,
+            email: normalizedEmail,
+          };
           const timeWindows =
             data?.preferredFamilyTimeWindows && typeof data.preferredFamilyTimeWindows === 'object'
               ? data.preferredFamilyTimeWindows
@@ -974,10 +1025,12 @@ const OwnCalendarScreen = () => {
 
         if (isActive) {
           setFamilyPreferences(resolvedPreferences);
+          setMemberProfiles(profileMap);
         }
       } catch (_error) {
         if (isActive) {
           setFamilyPreferences({});
+          setMemberProfiles({});
         }
       }
     };
