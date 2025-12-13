@@ -6,7 +6,7 @@ export const FAMILY_PREFERENCE_MODES = {
 
 export const FAMILY_PREFERENCE_MODE_OPTIONS = [
   { key: FAMILY_PREFERENCE_MODES.CUSTOM, label: 'Tilpas selv' },
-  { key: FAMILY_PREFERENCE_MODES.FOLLOW, label: 'Følg familiemedlem' },
+  { key: FAMILY_PREFERENCE_MODES.FOLLOW, label: 'Følg familie' },
   { key: FAMILY_PREFERENCE_MODES.NONE, label: 'Ingen præferencer' },
 ];
 

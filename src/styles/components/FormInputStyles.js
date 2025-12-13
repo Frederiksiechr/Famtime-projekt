@@ -6,11 +6,10 @@ const styles = StyleSheet.create({
     width: '100%',
   },
   label: {
-    marginBottom: spacing.xxs,
-    color: colors.mutedText,
-    fontSize: fontSizes.sm,
-    fontWeight: '600',
-    letterSpacing: 0.2,
+    marginBottom: spacing.xs,
+    color: colors.text,
+    fontSize: fontSizes.md,
+    fontWeight: '700',
   },
   labelFocused: {
     color: colors.primary,

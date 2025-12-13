@@ -142,25 +142,35 @@ const styles = StyleSheet.create({
   preferenceSubtitle: {
     marginTop: spacing.md,
     marginBottom: spacing.xs,
-    fontSize: fontSizes.sm,
-    color: colors.mutedText,
-    fontWeight: '600',
+    fontSize: fontSizes.md,
+    color: colors.text,
+    fontWeight: '700',
   },
   preferenceModeWrap: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
+    width: '100%',
     marginTop: spacing.xs,
     marginBottom: spacing.sm,
   },
+  preferenceModeRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+    marginBottom: spacing.xs,
+  },
   preferenceModeChip: {
+    flex: 1,
     paddingVertical: spacing.xs,
     paddingHorizontal: spacing.md,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.surfaceMuted,
-    marginRight: spacing.xs,
     marginBottom: spacing.xs,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  preferenceModeChipFull: {
+    width: '100%',
+    alignSelf: 'stretch',
   },
   preferenceModeChipSelected: {
     borderColor: colors.primary,
@@ -173,6 +183,7 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.sm,
     color: colors.text,
     fontWeight: '600',
+    textAlign: 'center',
   },
   preferenceModeChipTextSelected: {
     color: colors.primaryDark,
@@ -459,7 +470,7 @@ const styles = StyleSheet.create({
     marginBottom: spacing.xs,
   },
   durationTitle: {
-    fontSize: fontSizes.sm,
+    fontSize: fontSizes.md,
     fontWeight: '700',
     color: colors.text,
   },

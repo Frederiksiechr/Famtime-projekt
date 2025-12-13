@@ -1740,7 +1740,41 @@ const LandingScreen = ({ navigation, route }) => {
                   Vælg om du tilpasser selv eller følger familien
                 </Text>
                 <View style={styles.preferenceModeWrap}>
-                  {FAMILY_PREFERENCE_MODE_OPTIONS.map((option) => {
+                  <View style={styles.preferenceModeRow}>
+                    {FAMILY_PREFERENCE_MODE_OPTIONS.slice(0, 2).map((option) => {
+                      const selected = normalizedPreferenceMode === option.key;
+                      const disabled =
+                        option.key === FAMILY_PREFERENCE_MODES.FOLLOW &&
+                        !canFollowPreference;
+                      return (
+                        <Pressable
+                          key={option.key}
+                          onPress={() => handleSelectPreferenceMode(option.key)}
+                          disabled={disabled}
+                          style={[
+                            styles.preferenceModeChip,
+                            selected ? styles.preferenceModeChipSelected : null,
+                            disabled ? styles.preferenceModeChipDisabled : null,
+                          ]}
+                          accessibilityRole="button"
+                          accessibilityState={{ selected, disabled }}
+                        >
+                          <Text
+                            numberOfLines={1}
+                            ellipsizeMode="tail"
+                            style={[
+                              styles.preferenceModeChipText,
+                              selected ? styles.preferenceModeChipTextSelected : null,
+                              disabled ? styles.preferenceModeChipTextDisabled : null,
+                            ]}
+                          >
+                            {option.label}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
+                  {FAMILY_PREFERENCE_MODE_OPTIONS.slice(2).map((option) => {
                     const selected = normalizedPreferenceMode === option.key;
                     const disabled =
                       option.key === FAMILY_PREFERENCE_MODES.FOLLOW &&
@@ -1752,6 +1786,7 @@ const LandingScreen = ({ navigation, route }) => {
                         disabled={disabled}
                         style={[
                           styles.preferenceModeChip,
+                          styles.preferenceModeChipFull,
                           selected ? styles.preferenceModeChipSelected : null,
                           disabled ? styles.preferenceModeChipDisabled : null,
                         ]}
@@ -1759,6 +1794,8 @@ const LandingScreen = ({ navigation, route }) => {
                         accessibilityState={{ selected, disabled }}
                       >
                         <Text
+                          numberOfLines={1}
+                          ellipsizeMode="tail"
                           style={[
                             styles.preferenceModeChipText,
                             selected ? styles.preferenceModeChipTextSelected : null,
@@ -1784,7 +1821,7 @@ const LandingScreen = ({ navigation, route }) => {
                 {isFollowPreferenceMode ? (
                   <View style={styles.preferenceInfoCard}>
                     <Text style={styles.preferenceInfoTitle}>
-                      følg et familiemedlem
+                      Følg et familiemedlem
                     </Text>
                     <Text style={styles.preferenceInfoText}>
                       {selectedFollowMember
@@ -2082,8 +2119,6 @@ const LandingScreen = ({ navigation, route }) => {
 
 
 export default LandingScreen;
-
-
 
 
 
