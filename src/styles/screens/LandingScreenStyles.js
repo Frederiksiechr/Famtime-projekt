@@ -216,13 +216,15 @@ const styles = StyleSheet.create({
   },
   locationChipsWrap: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
+    flexWrap: 'nowrap',
     gap: spacing.xs,
     marginTop: spacing.xs,
   },
   locationChip: {
+    flex: 1,
+    minWidth: 0,
     paddingVertical: spacing.xs,
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
     borderRadius: 999,
     borderWidth: 1,
     borderColor: colors.border,
@@ -235,7 +237,7 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(230, 138, 46, 0.18)',
   },
   locationChipText: {
-    fontSize: fontSizes.sm,
+    fontSize: fontSizes.sm - 3,
     color: colors.text,
     textAlign: 'center',
   },

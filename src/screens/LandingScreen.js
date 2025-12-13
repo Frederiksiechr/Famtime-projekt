@@ -1690,7 +1690,7 @@ const LandingScreen = ({ navigation, route }) => {
                     ) : null}
                   </View>
                 <View style={styles.locationGroup}>
-                  <Text style={styles.preferenceSubtitle}>Lokation (valgfrit)</Text>
+                  <Text style={styles.preferenceSubtitle}>Lokation</Text>
                   <Text style={styles.locationHint}>Vælg den storby du bor tættest på</Text>
                   <View style={styles.locationChipsWrap}>
                     {DANISH_CITY_OPTIONS.map((city) => {
@@ -1737,9 +1737,8 @@ const LandingScreen = ({ navigation, route }) => {
 
                 <Text style={styles.preferenceTitle}>Dine præferencer</Text>
                 <Text style={styles.preferenceHint}>
-                  Vælg om du følger familien eller tilpasser selv - og brug hurtigvalgene til hurtigt at sætte jeres favorit-tidsrum.
+                  Vælg om du tilpasser selv eller følger familien
                 </Text>
-                <Text style={styles.preferenceSubtitle}>Hvordan skal de bruges?</Text>
                 <View style={styles.preferenceModeWrap}>
                   {FAMILY_PREFERENCE_MODE_OPTIONS.map((option) => {
                     const selected = normalizedPreferenceMode === option.key;
@@ -1840,9 +1839,8 @@ const LandingScreen = ({ navigation, route }) => {
                 ) : null}
                 {isCustomPreferenceMode && (
                   <View style={styles.customPreferenceSection}>
-                    <Text style={styles.preferenceSubtitle}>Foretrukne tidspunkter</Text>
                     <Text style={styles.preferenceFootnote}>
-                      Tryk på en dag for at åbne den og Vælg de tidsrum der passer jer.
+                      Tryk på en dag for og vælg de tidsrum der passer dig
                     </Text>
                     <View style={styles.dayTimeList}>
                       {WEEK_DAYS.map((day) => {
@@ -1891,7 +1889,7 @@ const LandingScreen = ({ navigation, route }) => {
                               <View style={styles.dayAccordionBody}>
                                 <View style={styles.dayAccordionBodyHeader}>
                                   <Text style={styles.dayToggleHint}>
-                                    Vælg et eller flere hurtigvalg herunder - de nye tidsrum vises som kort, hvor du kan finjustere tiderne.
+                                    Vælg et eller flere
                                   </Text>
                                 </View>
                                 <View style={styles.timePresetWrap}>
