@@ -151,6 +151,20 @@ const formatPreferredDays = (days) => {
   return labels.length ? labels.join(', ') : 'Ikke udfyldt';
 };
 
+const pickFirstString = (...values) => {
+  for (let index = 0; index < values.length; index += 1) {
+    const value = values[index];
+    if (typeof value !== 'string') {
+      continue;
+    }
+    const trimmed = value.trim();
+    if (trimmed.length) {
+      return trimmed;
+    }
+  }
+  return '';
+};
+
 const formatPreferenceSource = (profile, familyMembers = []) => {
   if (!profile) {
     return 'Ukendt';
@@ -189,6 +203,7 @@ const AccountSettingsScreen = ({ navigation }) => {
   const [leavingFamily, setLeavingFamily] = useState(false);
   const [deletingProfile, setDeletingProfile] = useState(false);
   const [removingMemberIds, setRemovingMemberIds] = useState([]);
+  const [memberProfiles, setMemberProfiles] = useState({});
 
   const currentUser = auth.currentUser;
   const userEmail = currentUser?.email ?? '';
@@ -349,6 +364,83 @@ const AccountSettingsScreen = ({ navigation }) => {
       unsubscribeFocus();
     };
   }, [currentUser, navigation, userEmail, userEmailLower]);
+
+  useEffect(() => {
+    let isActive = true;
+
+    const fetchMemberProfiles = async () => {
+      const members = Array.isArray(family?.members) ? family.members : [];
+      const memberIds = Array.from(
+        new Set(
+          members
+            .map((member) =>
+              typeof member?.userId === 'string' ? member.userId.trim() : ''
+            )
+            .filter((id) => id.length > 0)
+        )
+      );
+
+      if (!memberIds.length) {
+        if (isActive) {
+          setMemberProfiles({});
+        }
+        return;
+      }
+
+      try {
+        const snapshots = await Promise.all(
+          memberIds.map((memberId) =>
+            db
+              .collection('users')
+              .doc(memberId)
+              .get()
+              .catch(() => null)
+          )
+        );
+
+        if (!isActive) {
+          return;
+        }
+
+        const nextProfiles = {};
+        snapshots.forEach((docSnap) => {
+          if (!docSnap || !docSnap.exists) {
+            return;
+          }
+          const data = docSnap.data() ?? {};
+          nextProfiles[docSnap.id] = {
+            avatarEmoji:
+              typeof data.avatarEmoji === 'string' && data.avatarEmoji.trim().length
+                ? data.avatarEmoji.trim()
+                : '',
+            name:
+              typeof data.name === 'string' && data.name.trim().length
+                ? data.name.trim()
+                : '',
+            displayName:
+              typeof data.displayName === 'string' && data.displayName.trim().length
+                ? data.displayName.trim()
+                : '',
+            email:
+              typeof data.email === 'string' && data.email.trim().length
+                ? data.email.trim()
+                : '',
+          };
+        });
+        setMemberProfiles(nextProfiles);
+      } catch (_fetchError) {
+        if (isActive) {
+          setMemberProfiles({});
+        }
+      }
+    };
+
+    fetchMemberProfiles();
+
+    return () => {
+      isActive = false;
+    };
+  }, [family?.members]);
 
   const handleAcceptInvite = async (familyId) => {
     if (!currentUser) {
@@ -1100,6 +1192,15 @@ const AccountSettingsScreen = ({ navigation }) => {
               <Text style={styles.sectionSubtitle}>Medlemmer</Text>
               {family.members.length ? (
                 family.members.map((member) => {
+                  const profileData =
+                    member?.userId && memberProfiles?.[member.userId]
+                      ? memberProfiles[member.userId]
+                      : null;
+                  const profileEmoji =
+                    typeof profileData?.avatarEmoji === 'string' &&
+                    profileData.avatarEmoji.trim().length
+                      ? profileData.avatarEmoji.trim()
+                      : '';
                   const docEmoji =
                     typeof member?.avatarEmoji === 'string' && member.avatarEmoji.trim().length
                       ? member.avatarEmoji.trim()
@@ -1107,15 +1208,16 @@ const AccountSettingsScreen = ({ navigation }) => {
                   const memberEmoji =
                     member?.userId && currentUser?.uid && member.userId === currentUser.uid
                       ? resolvedUserEmoji
-                      : docEmoji;
+                      : profileEmoji || docEmoji;
                   const memberName =
-                    typeof member?.displayName === 'string' && member.displayName.trim().length
-                      ? member.displayName.trim()
-                      : typeof member?.name === 'string' && member.name.trim().length
-                        ? member.name.trim()
-                        : typeof member?.email === 'string' && member.email.trim().length
-                          ? member.email.trim()
-                          : 'Familiemedlem';
+                    pickFirstString(
+                      profileData?.displayName,
+                      profileData?.name,
+                      member?.displayName,
+                      member?.name,
+                      profileData?.email,
+                      member?.email
+                    ) || 'Familiemedlem';
                   return (
                     <View
                       key={`${member.userId}-${member.email}`}
