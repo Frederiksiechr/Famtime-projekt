@@ -1566,9 +1566,6 @@ const LandingScreen = ({ navigation, route }) => {
       >
         <View style={styles.container}>
           <View style={styles.heroCard}>
-            <Text style={styles.heroBadge}>
-              {isEditMode ? 'Din profil' : 'Klar til familietid'}
-            </Text>
             <Text style={styles.title}>
               {isEditMode ? 'Opdater din profil' : 'Velkommen til FamTime'}
             </Text>
@@ -1712,7 +1709,6 @@ const LandingScreen = ({ navigation, route }) => {
                         >
                           <Text
                             numberOfLines={1}
-                            adjustsFontSizeToFit
                             ellipsizeMode="tail"
                             style={[
                               styles.locationChipText,
@@ -1846,7 +1842,7 @@ const LandingScreen = ({ navigation, route }) => {
                   <View style={styles.customPreferenceSection}>
                     <Text style={styles.preferenceSubtitle}>Foretrukne tidspunkter</Text>
                     <Text style={styles.preferenceFootnote}>
-                      Tryk på en dag for at åbne den og Vælg de tidsrum der passer jer - du kan Tilføje flere tidsrum per dag.
+                      Tryk på en dag for at åbne den og Vælg de tidsrum der passer jer.
                     </Text>
                     <View style={styles.dayTimeList}>
                       {WEEK_DAYS.map((day) => {
@@ -2088,8 +2084,6 @@ const LandingScreen = ({ navigation, route }) => {
 
 
 export default LandingScreen;
-
-
 
 
 
