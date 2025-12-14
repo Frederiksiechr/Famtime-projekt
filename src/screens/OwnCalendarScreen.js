@@ -120,17 +120,6 @@ const capitalizeWord = (value) => {
   return value.charAt(0).toUpperCase() + value.slice(1);
 };
 
-const formatDateTime = (date) => {
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
-    return 'Ukendt tidspunkt';
-  }
-
-  return `${date.toLocaleDateString()} kl. ${date.toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-  })}`;
-};
-
 const toDate = (value) => {
   if (!value) {
     return null;
@@ -271,10 +260,10 @@ const OwnCalendarScreen = () => {
   const [proposalError, setProposalError] = useState('');
   const [proposalSaving, setProposalSaving] = useState(false);
 
-  const [showProposalStartPicker, setShowProposalStartPicker] = useState(isIOS);
-  const [showProposalEndPicker, setShowProposalEndPicker] = useState(isIOS);
-  const [suggestions, setSuggestions] = useState([]);
-  const [selectedSuggestionId, setSelectedSuggestionId] = useState(null);
+  const [showProposalDatePicker, setShowProposalDatePicker] = useState(isIOS);
+  const [showProposalStartTimePicker, setShowProposalStartTimePicker] = useState(false);
+  const [showProposalEndTimePicker, setShowProposalEndTimePicker] = useState(false);
+  const [iosActiveTimePicker, setIosActiveTimePicker] = useState(null);
   const [expandedEventIds, setExpandedEventIds] = useState(() => new Set());
   const [collapsedSections, setCollapsedSections] = useState({});
   const [deviceCalendarSource, setDeviceCalendarSource] = useState({
@@ -353,10 +342,10 @@ const OwnCalendarScreen = () => {
     });
     setProposalError('');
     setProposalSaving(false);
-    setShowProposalStartPicker(isIOS);
-    setShowProposalEndPicker(isIOS);
-    setSuggestions([]);
-    setSelectedSuggestionId(null);
+    setShowProposalDatePicker(isIOS);
+    setShowProposalStartTimePicker(false);
+    setShowProposalEndTimePicker(false);
+    setIosActiveTimePicker(null);
   }, []);
 
   const openProposalModal = useCallback(
@@ -384,10 +373,10 @@ const OwnCalendarScreen = () => {
       });
       setProposalError('');
       setProposalSaving(false);
-      setShowProposalStartPicker(isIOS);
-      setShowProposalEndPicker(isIOS);
-      setSelectedSuggestionId(null);
-      setSuggestions([]);
+      setShowProposalDatePicker(isIOS);
+      setShowProposalStartTimePicker(false);
+      setShowProposalEndTimePicker(false);
+      setIosActiveTimePicker(null);
       setProposalVisible(true);
     },
     [setProposalVisible]
@@ -398,6 +387,19 @@ const OwnCalendarScreen = () => {
     setProposalEvent(null);
     resetProposalState();
   }, [resetProposalState]);
+
+  const proposalMinDate = useMemo(() => {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (proposalEvent?.start instanceof Date && !Number.isNaN(proposalEvent.start.getTime())) {
+      const eventStart = new Date(proposalEvent.start);
+      eventStart.setHours(0, 0, 0, 0);
+      return eventStart > today ? eventStart : today;
+    }
+
+    return today;
+  }, [proposalEvent]);
 
   const requiresRenewedApproval = useCallback(
     (event) => event?.status === 'pending' || Boolean(event?.pendingChange),
@@ -1662,74 +1664,161 @@ const OwnCalendarScreen = () => {
     [handleAdminCancelEvent]
   );
 
-  const handleProposalStartChange = useCallback(
-    (_event, selectedDate) => {
+  const handleProposalDateChange = useCallback(
+    (event, selectedDate) => {
+      if (event?.type === 'dismissed') {
+        if (!isIOS) {
+          setShowProposalDatePicker(false);
+        }
+        return;
+      }
+
       if (selectedDate) {
         const cleaned = new Date(selectedDate);
-        cleaned.setSeconds(0, 0);
+        cleaned.setHours(0, 0, 0, 0);
         setProposalData((prev) => {
-          const nextEnd =
-            prev.end <= cleaned
-              ? new Date(cleaned.getTime() + 60 * 60 * 1000)
-              : prev.end;
+          const prevStart =
+            prev.start instanceof Date && !Number.isNaN(prev.start.getTime())
+              ? new Date(prev.start)
+              : new Date();
+          const prevEnd =
+            prev.end instanceof Date && !Number.isNaN(prev.end.getTime())
+              ? new Date(prev.end)
+              : new Date(prevStart.getTime() + 60 * 60 * 1000);
+          prevStart.setSeconds(0, 0);
+          prevEnd.setSeconds(0, 0);
+
+          const nextStart = new Date(cleaned);
+          nextStart.setHours(prevStart.getHours(), prevStart.getMinutes(), 0, 0);
+
+          let nextEnd = new Date(cleaned);
+          nextEnd.setHours(prevEnd.getHours(), prevEnd.getMinutes(), 0, 0);
+          if (nextEnd <= nextStart) {
+            nextEnd = new Date(nextStart.getTime() + 30 * 60 * 1000);
+          }
+
           return {
             ...prev,
-            start: cleaned,
+            start: nextStart,
             end: nextEnd,
           };
         });
       }
 
       if (!isIOS) {
-        setShowProposalStartPicker(false);
+        setShowProposalDatePicker(false);
       }
     },
     []
   );
 
-  const handleProposalEndChange = useCallback(
-    (_event, selectedDate) => {
+  const handleProposalStartTimeChange = useCallback(
+    (event, selectedDate) => {
+      if (event?.type === 'dismissed') {
+        if (!isIOS) {
+          setShowProposalStartTimePicker(false);
+        }
+        return;
+      }
+
       if (selectedDate) {
-        const cleaned = new Date(selectedDate);
-        cleaned.setSeconds(0, 0);
-        setProposalData((prev) => ({
-          ...prev,
-          end:
-            cleaned > prev.start
-              ? cleaned
-              : new Date(prev.start.getTime() + 30 * 60 * 1000),
-        }));
+        setProposalData((prev) => {
+          const nextStart =
+            prev.start instanceof Date && !Number.isNaN(prev.start.getTime())
+              ? new Date(prev.start)
+              : new Date();
+          nextStart.setHours(selectedDate.getHours(), selectedDate.getMinutes(), 0, 0);
+
+          let nextEnd =
+            prev.end instanceof Date && !Number.isNaN(prev.end.getTime())
+              ? new Date(prev.end)
+              : new Date(nextStart.getTime() + 60 * 60 * 1000);
+          if (nextEnd <= nextStart) {
+            nextEnd = new Date(nextStart.getTime() + 30 * 60 * 1000);
+          }
+
+          return {
+            ...prev,
+            start: nextStart,
+            end: nextEnd,
+          };
+        });
       }
 
       if (!isIOS) {
-        setShowProposalEndPicker(false);
+        setShowProposalStartTimePicker(false);
       }
     },
     []
   );
 
-  const handleSelectSuggestion = useCallback((suggestion) => {
-    if (!suggestion) {
+  const handleProposalEndTimeChange = useCallback(
+    (event, selectedDate) => {
+      if (event?.type === 'dismissed') {
+        if (!isIOS) {
+          setShowProposalEndTimePicker(false);
+        }
+        return;
+      }
+
+      if (selectedDate) {
+        setProposalData((prev) => {
+          const nextEnd =
+            prev.end instanceof Date && !Number.isNaN(prev.end.getTime())
+              ? new Date(prev.end)
+              : new Date();
+          nextEnd.setHours(selectedDate.getHours(), selectedDate.getMinutes(), 0, 0);
+          const nextStart =
+            prev.start instanceof Date && !Number.isNaN(prev.start.getTime())
+              ? new Date(prev.start)
+              : new Date();
+
+          if (nextEnd <= nextStart) {
+            return {
+              ...prev,
+              end: new Date(nextStart.getTime() + 30 * 60 * 1000),
+            };
+          }
+
+          return {
+            ...prev,
+            end: nextEnd,
+          };
+        });
+      }
+
+      if (!isIOS) {
+        setShowProposalEndTimePicker(false);
+      }
+    },
+    []
+  );
+
+  const handleOpenDatePicker = useCallback(() => {
+    if (!isIOS) {
+      setShowProposalDatePicker(true);
+    }
+  }, []);
+
+  const handleOpenTimePicker = useCallback((type) => {
+    if (type !== 'start' && type !== 'end') {
       return;
     }
 
-    const nextStart =
-      suggestion.start instanceof Date
-        ? suggestion.start
-        : new Date(suggestion.start ?? Date.now());
-    const nextEnd =
-      suggestion.end instanceof Date
-        ? suggestion.end
-        : new Date(nextStart.getTime() + 60 * 60 * 1000);
+    if (isIOS) {
+      setIosActiveTimePicker(type);
+      return;
+    }
 
-    setSelectedSuggestionId(suggestion.id ?? nextStart.toISOString());
-    setProposalData((prev) => ({
-      ...prev,
-      start: nextStart,
-      end: nextEnd > nextStart ? nextEnd : new Date(nextStart.getTime() + 60 * 60 * 1000),
-    }));
-    setShowProposalStartPicker(isIOS);
-    setShowProposalEndPicker(isIOS);
+    if (type === 'start') {
+      setShowProposalStartTimePicker(true);
+    } else {
+      setShowProposalEndTimePicker(true);
+    }
+  }, []);
+
+  const handleCloseIosTimePicker = useCallback(() => {
+    setIosActiveTimePicker(null);
   }, []);
 
   const handleSubmitProposal = useCallback(async () => {
@@ -1751,6 +1840,11 @@ const OwnCalendarScreen = () => {
 
     if (proposalData.end <= proposalData.start) {
       setProposalError('Sluttidspunkt skal være efter starttidspunkt.');
+      return;
+    }
+
+    if (proposalData.start < proposalMinDate) {
+      setProposalError('Vælg en dato fra begivenhedens dag og frem.');
       return;
     }
 
@@ -1805,6 +1899,7 @@ const OwnCalendarScreen = () => {
     proposalData.start,
     proposalData.title,
     proposalEvent,
+    proposalMinDate,
   ]);
 
   const renderEventSection = (
@@ -2376,6 +2471,49 @@ const OwnCalendarScreen = () => {
     );
   };
 
+  const renderIosTimePickerModal = () => {
+    if (!isIOS || !iosActiveTimePicker) {
+      return null;
+    }
+
+    const pickerValue = iosActiveTimePicker === 'start' ? proposalData.start : proposalData.end;
+    const pickerLabel =
+      iosActiveTimePicker === 'start' ? 'Vælg starttidspunkt' : 'Vælg sluttidspunkt';
+    const handleChange =
+      iosActiveTimePicker === 'start'
+        ? handleProposalStartTimeChange
+        : handleProposalEndTimeChange;
+
+    return (
+      <Modal visible transparent animationType="fade">
+        <Pressable
+          style={styles.pickerBackdrop}
+          onPress={handleCloseIosTimePicker}
+          accessibilityRole="button"
+          accessibilityLabel="Luk tidsvælger"
+        />
+        <View style={styles.pickerSheet}>
+          <View style={styles.pickerHeader}>
+            <Text style={styles.pickerTitle}>{pickerLabel}</Text>
+            <Pressable
+              onPress={handleCloseIosTimePicker}
+              accessibilityRole="button"
+              hitSlop={12}
+            >
+              <Text style={styles.pickerCloseText}>Færdig</Text>
+            </Pressable>
+          </View>
+          <DateTimePicker
+            value={pickerValue}
+            mode="time"
+            display="spinner"
+            onChange={handleChange}
+          />
+        </View>
+      </Modal>
+    );
+  };
+
   const shouldShowStatusCard = Boolean(error);
 
   return (
@@ -2480,66 +2618,70 @@ const OwnCalendarScreen = () => {
                     }
                     multiline
                   />
+                  <Text style={styles.modalLabel}>Dato</Text>
+                  <Pressable
+                    style={styles.modalDateButton}
+                    onPress={handleOpenDatePicker}
+                  >
+                    <Text style={styles.modalDateText}>
+                      {formatWeekdayDateLabel(proposalData.start)}
+                    </Text>
+                  </Pressable>
+                  {isIOS ? (
+                    <View style={styles.calendarPickerWrapper}>
+                      <DateTimePicker
+                        value={proposalData.start}
+                        mode="date"
+                        display="inline"
+                        minimumDate={proposalMinDate}
+                        onChange={handleProposalDateChange}
+                        style={styles.calendarPicker}
+                      />
+                    </View>
+                  ) : showProposalDatePicker ? (
+                    <DateTimePicker
+                      value={proposalData.start}
+                      mode="date"
+                      display="calendar"
+                      minimumDate={proposalMinDate}
+                      onChange={handleProposalDateChange}
+                    />
+                  ) : null}
+
                   <Text style={styles.modalLabel}>Starttidspunkt</Text>
                   <Pressable
                     style={styles.modalDateButton}
-                    onPress={() => setShowProposalStartPicker(true)}
+                    onPress={() => handleOpenTimePicker('start')}
                   >
                     <Text style={styles.modalDateText}>
-                      {formatDateTime(proposalData.start)}
+                      {formatClockLabel(proposalData.start)}
                     </Text>
                   </Pressable>
-                  {(isIOS || showProposalStartPicker) && (
+                  {!isIOS && showProposalStartTimePicker && (
                     <DateTimePicker
                       value={proposalData.start}
-                      mode="datetime"
-                      display={isIOS ? 'inline' : 'default'}
-                      onChange={handleProposalStartChange}
+                      mode="time"
+                      display={isIOS ? 'spinner' : 'clock'}
+                      onChange={handleProposalStartTimeChange}
                     />
                   )}
 
                   <Text style={styles.modalLabel}>Sluttidspunkt</Text>
                   <Pressable
                     style={styles.modalDateButton}
-                    onPress={() => setShowProposalEndPicker(true)}
+                    onPress={() => handleOpenTimePicker('end')}
                   >
                     <Text style={styles.modalDateText}>
-                      {formatDateTime(proposalData.end)}
+                      {formatClockLabel(proposalData.end)}
                     </Text>
                   </Pressable>
-                  {(isIOS || showProposalEndPicker) && (
+                  {!isIOS && showProposalEndTimePicker && (
                     <DateTimePicker
                       value={proposalData.end}
-                      mode="datetime"
-                      display={isIOS ? 'inline' : 'default'}
-                      onChange={handleProposalEndChange}
+                      mode="time"
+                      display={isIOS ? 'spinner' : 'clock'}
+                      onChange={handleProposalEndTimeChange}
                     />
-                  )}
-
-                  <Text style={styles.modalLabel}>Hurtige forslag</Text>
-                  {suggestions.length ? (
-                    <View style={styles.suggestionsWrap}>
-                      {suggestions.map((suggestion) => (
-                        <Pressable
-                          key={suggestion.id}
-                          onPress={() => handleSelectSuggestion(suggestion)}
-                          style={[
-                            styles.suggestionChip,
-                            selectedSuggestionId === suggestion.id
-                              ? styles.suggestionChipSelected
-                              : null,
-                          ]}
-                        >
-                          <Text style={styles.suggestionText}>
-                            {formatDateTime(suggestion.start)}
-                          </Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  ) : (
-                    <Text style={styles.modalHint}>
-                      Ingen oplagte tider i de næste dage. Du kan vælge tidspunkt manuelt.
-                    </Text>
                   )}
 
                   <ErrorMessage message={proposalError} />
@@ -2562,6 +2704,7 @@ const OwnCalendarScreen = () => {
           </KeyboardAvoidingView>
         </Pressable>
       </Modal>
+      {renderIosTimePickerModal()}
     </>
   );
 };
