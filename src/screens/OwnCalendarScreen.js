@@ -263,7 +263,6 @@ const OwnCalendarScreen = () => {
   const [showProposalDatePicker, setShowProposalDatePicker] = useState(isIOS);
   const [showProposalStartTimePicker, setShowProposalStartTimePicker] = useState(false);
   const [showProposalEndTimePicker, setShowProposalEndTimePicker] = useState(false);
-  const [iosActiveTimePicker, setIosActiveTimePicker] = useState(null);
   const [expandedEventIds, setExpandedEventIds] = useState(() => new Set());
   const [collapsedSections, setCollapsedSections] = useState({});
   const [deviceCalendarSource, setDeviceCalendarSource] = useState({
@@ -345,7 +344,6 @@ const OwnCalendarScreen = () => {
     setShowProposalDatePicker(isIOS);
     setShowProposalStartTimePicker(false);
     setShowProposalEndTimePicker(false);
-    setIosActiveTimePicker(null);
   }, []);
 
   const openProposalModal = useCallback(
@@ -376,7 +374,6 @@ const OwnCalendarScreen = () => {
       setShowProposalDatePicker(isIOS);
       setShowProposalStartTimePicker(false);
       setShowProposalEndTimePicker(false);
-      setIosActiveTimePicker(null);
       setProposalVisible(true);
     },
     [setProposalVisible]
@@ -1715,9 +1712,7 @@ const OwnCalendarScreen = () => {
   const handleProposalStartTimeChange = useCallback(
     (event, selectedDate) => {
       if (event?.type === 'dismissed') {
-        if (!isIOS) {
-          setShowProposalStartTimePicker(false);
-        }
+        setShowProposalStartTimePicker(false);
         return;
       }
 
@@ -1755,9 +1750,7 @@ const OwnCalendarScreen = () => {
   const handleProposalEndTimeChange = useCallback(
     (event, selectedDate) => {
       if (event?.type === 'dismissed') {
-        if (!isIOS) {
-          setShowProposalEndTimePicker(false);
-        }
+        setShowProposalEndTimePicker(false);
         return;
       }
 
@@ -1801,24 +1794,13 @@ const OwnCalendarScreen = () => {
   }, []);
 
   const handleOpenTimePicker = useCallback((type) => {
-    if (type !== 'start' && type !== 'end') {
-      return;
-    }
-
-    if (isIOS) {
-      setIosActiveTimePicker(type);
-      return;
-    }
-
     if (type === 'start') {
+      setShowProposalEndTimePicker(false);
       setShowProposalStartTimePicker(true);
-    } else {
+    } else if (type === 'end') {
+      setShowProposalStartTimePicker(false);
       setShowProposalEndTimePicker(true);
     }
-  }, []);
-
-  const handleCloseIosTimePicker = useCallback(() => {
-    setIosActiveTimePicker(null);
   }, []);
 
   const handleSubmitProposal = useCallback(async () => {
@@ -2471,49 +2453,6 @@ const OwnCalendarScreen = () => {
     );
   };
 
-  const renderIosTimePickerModal = () => {
-    if (!isIOS || !iosActiveTimePicker) {
-      return null;
-    }
-
-    const pickerValue = iosActiveTimePicker === 'start' ? proposalData.start : proposalData.end;
-    const pickerLabel =
-      iosActiveTimePicker === 'start' ? 'Vælg starttidspunkt' : 'Vælg sluttidspunkt';
-    const handleChange =
-      iosActiveTimePicker === 'start'
-        ? handleProposalStartTimeChange
-        : handleProposalEndTimeChange;
-
-    return (
-      <Modal visible transparent animationType="fade">
-        <Pressable
-          style={styles.pickerBackdrop}
-          onPress={handleCloseIosTimePicker}
-          accessibilityRole="button"
-          accessibilityLabel="Luk tidsvælger"
-        />
-        <View style={styles.pickerSheet}>
-          <View style={styles.pickerHeader}>
-            <Text style={styles.pickerTitle}>{pickerLabel}</Text>
-            <Pressable
-              onPress={handleCloseIosTimePicker}
-              accessibilityRole="button"
-              hitSlop={12}
-            >
-              <Text style={styles.pickerCloseText}>Færdig</Text>
-            </Pressable>
-          </View>
-          <DateTimePicker
-            value={pickerValue}
-            mode="time"
-            display="spinner"
-            onChange={handleChange}
-          />
-        </View>
-      </Modal>
-    );
-  };
-
   const shouldShowStatusCard = Boolean(error);
 
   return (
@@ -2601,6 +2540,7 @@ const OwnCalendarScreen = () => {
                   style={styles.modalCard}
                 >
                   <Text style={styles.modalTitle}>Foreslå ændring</Text>
+                  <Text style={styles.modalLabel}>Titel</Text>
                   <TextInput
                     style={styles.modalInput}
                     placeholder="Titel"
@@ -2609,6 +2549,7 @@ const OwnCalendarScreen = () => {
                       setProposalData((prev) => ({ ...prev, title: text }))
                     }
                   />
+                  <Text style={styles.modalLabel}>Beskrivelse</Text>
                   <TextInput
                     style={[styles.modalInput, styles.modalNotesInput]}
                     placeholder="Beskrivelse (valgfrit)"
@@ -2665,6 +2606,24 @@ const OwnCalendarScreen = () => {
                       onChange={handleProposalStartTimeChange}
                     />
                   )}
+                  {isIOS && showProposalStartTimePicker ? (
+                    <View style={styles.inlineTimePicker}>
+                      <DateTimePicker
+                        value={proposalData.start}
+                        mode="time"
+                        display="spinner"
+                        onChange={handleProposalStartTimeChange}
+                        style={styles.inlineTimeSpinner}
+                      />
+                      <Pressable
+                        onPress={() => setShowProposalStartTimePicker(false)}
+                        style={styles.inlineTimePickerAction}
+                        accessibilityRole="button"
+                      >
+                        <Text style={styles.inlineTimePickerClose}>Færdig</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
 
                   <Text style={styles.modalLabel}>Sluttidspunkt</Text>
                   <Pressable
@@ -2683,6 +2642,24 @@ const OwnCalendarScreen = () => {
                       onChange={handleProposalEndTimeChange}
                     />
                   )}
+                  {isIOS && showProposalEndTimePicker ? (
+                    <View style={styles.inlineTimePicker}>
+                      <DateTimePicker
+                        value={proposalData.end}
+                        mode="time"
+                        display="spinner"
+                        onChange={handleProposalEndTimeChange}
+                        style={styles.inlineTimeSpinner}
+                      />
+                      <Pressable
+                        onPress={() => setShowProposalEndTimePicker(false)}
+                        style={styles.inlineTimePickerAction}
+                        accessibilityRole="button"
+                      >
+                        <Text style={styles.inlineTimePickerClose}>Færdig</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
 
                   <ErrorMessage message={proposalError} />
 
@@ -2704,7 +2681,6 @@ const OwnCalendarScreen = () => {
           </KeyboardAvoidingView>
         </Pressable>
       </Modal>
-      {renderIosTimePickerModal()}
     </>
   );
 };
