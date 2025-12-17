@@ -22,7 +22,7 @@ import ErrorMessage from '../components/ErrorMessage';
 import { auth, db, firebase } from '../lib/firebase';
 import { colors } from '../styles/theme';
 import styles from '../styles/screens/LandingScreenStyles';
-import * as Clipboard from 'expo-clipboard';
+import { copyStringToClipboard } from '../utils/clipboard';
 import {
   AVATAR_EMOJIS,
   DEFAULT_AVATAR_EMOJI,
@@ -230,6 +230,8 @@ const buildTimeWindowPayload = (selections) => {
 };
 
 const GENDER_OPTIONS = ['Kvinde', 'Mand', 'Andet'];
+const CHILDREN_COUNT_MIN = 0;
+const CHILDREN_COUNT_MAX = 10;
 const MIN_AGE = 5;
 const MAX_AGE = 100;
 const DANISH_CITY_OPTIONS = ['København', 'Odense', 'Aalborg'];
@@ -484,6 +486,7 @@ const LandingScreen = ({ navigation, route }) => {
     familyId: '',
     familyRole: '',
     preferredDays: [],
+    childrenCount: '',
     preferredMinDuration: String(DEFAULT_MIN_DURATION_MINUTES),
     preferredMaxDuration: String(DEFAULT_MAX_DURATION_MINUTES),
     avatarEmoji: '',
@@ -648,6 +651,27 @@ const LandingScreen = ({ navigation, route }) => {
             : preferredDayCandidatesFromWindows.length
               ? preferredDayCandidatesFromWindows
               : [];
+          const normalizedChildrenCount = (() => {
+            const isAllowedRange = (value) =>
+              Number.isFinite(value) &&
+              value >= CHILDREN_COUNT_MIN &&
+              value <= CHILDREN_COUNT_MAX;
+            if (typeof data.childrenCount === 'number') {
+              const numericValue = Number(data.childrenCount);
+              return isAllowedRange(numericValue) ? String(numericValue) : '';
+            }
+            if (typeof data.childrenCount === 'string') {
+              const trimmed = data.childrenCount.trim();
+              if (trimmed === '+4') {
+                return '4';
+              }
+              if (/^\d+$/.test(trimmed)) {
+                const numericValue = Number(trimmed);
+                return isAllowedRange(numericValue) ? String(numericValue) : '';
+              }
+            }
+            return '';
+          })();
 
           setProfile({
             name: data.name ?? '',
@@ -661,6 +685,7 @@ const LandingScreen = ({ navigation, route }) => {
             familyId: data.familyId ?? '',
             familyRole: data.familyRole ?? '',
             preferredDays: normalizedPreferredDays,
+            childrenCount: normalizedChildrenCount,
             preferredMinDuration:
               minDurationMinutes || String(DEFAULT_MIN_DURATION_MINUTES),
             preferredMaxDuration:
@@ -1137,8 +1162,12 @@ const LandingScreen = ({ navigation, route }) => {
     if (!profile.familyId) {
       return;
     }
-    await Clipboard.setStringAsync(profile.familyId);
-    setCopyFeedback('Familie ID kopieret.');
+    const copied = await copyStringToClipboard(profile.familyId);
+    setCopyFeedback(
+      copied
+        ? 'Familie ID kopieret.'
+        : 'Kunne ikke kopiere. Opdater eller geninstaller din Expo app.'
+    );
     setTimeout(() => setCopyFeedback(''), 2500);
   };
 
@@ -1156,6 +1185,36 @@ const LandingScreen = ({ navigation, route }) => {
       }
       const next = { ...prev };
       delete next.gender;
+      return next;
+    });
+  }, []);
+
+  const handleChildrenCountChange = useCallback((value) => {
+    if (typeof value !== 'string') {
+      return;
+    }
+    const digitsOnly = value.replace(/\D/g, '');
+    let normalized = digitsOnly.slice(0, 2);
+    if (normalized.length) {
+      const numericValue = Number(normalized);
+      if (Number.isNaN(numericValue)) {
+        normalized = '';
+      } else if (numericValue > CHILDREN_COUNT_MAX) {
+        normalized = String(CHILDREN_COUNT_MAX);
+      } else {
+        normalized = String(numericValue);
+      }
+    }
+    setProfile((prev) => ({
+      ...prev,
+      childrenCount: normalized,
+    }));
+    setFieldErrors((prev) => {
+      if (!prev.childrenCount) {
+        return prev;
+      }
+      const next = { ...prev };
+      delete next.childrenCount;
       return next;
     });
   }, []);
@@ -1319,6 +1378,24 @@ const LandingScreen = ({ navigation, route }) => {
     if (!trimmedGender) {
       nextErrors.gender = 'Køn skal udfyldes.';
     }
+    const trimmedChildrenCount =
+      typeof profile.childrenCount === 'string'
+        ? profile.childrenCount.trim()
+        : '';
+    if (!trimmedChildrenCount) {
+      nextErrors.childrenCount = 'Angiv antal børn.';
+    } else if (!/^\d+$/.test(trimmedChildrenCount)) {
+      nextErrors.childrenCount = 'Antal børn skal være et tal.';
+    } else {
+      const numericChildrenCount = Number(trimmedChildrenCount);
+      if (
+        Number.isNaN(numericChildrenCount) ||
+        numericChildrenCount < CHILDREN_COUNT_MIN ||
+        numericChildrenCount > CHILDREN_COUNT_MAX
+      ) {
+        nextErrors.childrenCount = `Antal børn skal være mellem ${CHILDREN_COUNT_MIN} og ${CHILDREN_COUNT_MAX}.`;
+      }
+    }
 
     const minDurationRaw =
       typeof profile.preferredMinDuration === 'string'
@@ -1413,6 +1490,14 @@ const LandingScreen = ({ navigation, route }) => {
         const trimmedName = profile.name.trim();
         const normalizedName = trimmedName.length ? trimmedName : userEmail;
         const trimmedGender = profile.gender.trim();
+        const trimmedChildrenCount =
+          typeof profile.childrenCount === 'string'
+            ? profile.childrenCount.trim()
+            : '';
+        const numericChildrenCount =
+          /^\d+$/.test(trimmedChildrenCount) && trimmedChildrenCount.length
+            ? Number(trimmedChildrenCount)
+            : null;
         const normalizedEmail =
           typeof userEmail === 'string' ? userEmail.toLowerCase() : '';
         let emojiSyncFailed = false;
@@ -1424,6 +1509,16 @@ const LandingScreen = ({ navigation, route }) => {
           avatarEmoji: sanitizedEmoji,
           updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
         };
+
+        if (
+          Number.isFinite(numericChildrenCount) &&
+          numericChildrenCount >= CHILDREN_COUNT_MIN &&
+          numericChildrenCount <= CHILDREN_COUNT_MAX
+        ) {
+          payload.childrenCount = numericChildrenCount;
+        } else {
+          payload.childrenCount = firebase.firestore.FieldValue.delete();
+        }
 
         if (sanitizedLocation) {
           payload.location = sanitizedLocation;
@@ -2068,6 +2163,17 @@ const LandingScreen = ({ navigation, route }) => {
                         onChange={handleDurationSliderChange}
                       />
                     </View>
+                    <FormInput
+                      label="Hvor mange børn har du?"
+                      value={profile.childrenCount}
+                      onChangeText={handleChildrenCountChange}
+                      placeholder="0-10"
+                      keyboardType="number-pad"
+                      inputMode="numeric"
+                      maxLength={2}
+                      error={fieldErrors.childrenCount}
+                      style={styles.field}
+                    />
 
                   </View>
                 )}
@@ -2119,6 +2225,3 @@ const LandingScreen = ({ navigation, route }) => {
 
 
 export default LandingScreen;
-
-
-

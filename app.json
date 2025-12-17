@@ -8,11 +8,19 @@
     "splash": {
       "backgroundColor": "#ffffff"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "jsEngine": "hermes",
-    "platforms": ["ios", "android"],
+    "platforms": [
+      "ios",
+      "android"
+    ],
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSUserNotificationUsageDescription": "FamTime sender notifikationer, naar aktiviteter mangler din godkendelse."
+      }
     },
     "android": {
       "package": "com.famtime.app"
@@ -20,6 +28,11 @@
     "web": {
       "bundler": "metro",
       "output": "single"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "2944c4d0-040a-49ec-bbf9-c0dbfe671b4d"
+      }
     }
   }
 }

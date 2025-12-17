@@ -20,6 +20,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useNavigation } from '@react-navigation/native';
 import * as Calendar from 'expo-calendar';
+import * as Notifications from 'expo-notifications';
 
 import Button from '../components/Button';
 import ErrorMessage from '../components/ErrorMessage';
@@ -45,6 +46,14 @@ import {
   normalizeBusyPayload,
   shallowEqualObjects,
 } from '../utils/calendarAvailability';
+import {
+  PENDING_APPROVAL_APPROVE_ACTION,
+  PENDING_APPROVAL_NOTIFICATION_CATEGORY,
+  PENDING_APPROVAL_NOTIFICATION_CHANNEL,
+  PENDING_APPROVAL_NOTIFICATION_MESSAGE,
+  PENDING_APPROVAL_NOTIFICATION_TITLE,
+  PENDING_APPROVAL_REJECT_ACTION,
+} from '../constants/notifications';
 
 const DEFAULT_EVENT_DURATION_MINUTES = 60;
 const MIN_EVENT_DURATION_MINUTES = 15;
@@ -226,6 +235,7 @@ const FamilyEventsScreen = () => {
   const [selectedSuggestionId, setSelectedSuggestionId] = useState(null);
   const [activeSlotId, setActiveSlotId] = useState(null);
   const [builderVisible, setBuilderVisible] = useState(false);
+  const [notificationsAllowed, setNotificationsAllowed] = useState(false);
   useFocusEffect(
     useCallback(() => {
       setBuilderVisible(false);
@@ -253,6 +263,7 @@ const FamilyEventsScreen = () => {
   const [moodPreview, setMoodPreview] = useState(null);
   const [deviceBusyRefreshToken, setDeviceBusyRefreshToken] = useState(0);
   const deviceBusyLoadedRef = useRef('');
+  const notifiedPendingEventsRef = useRef(new Set());
   const requestDeviceBusyRefresh = useCallback(() => {
     setDeviceBusyRefreshToken((token) => token + 1);
   }, []);
@@ -337,6 +348,136 @@ const FamilyEventsScreen = () => {
   const handleRevealBuilder = useCallback(() => {
     setBuilderVisible(true);
   }, []);
+
+  const sendPendingApprovalNotification = useCallback(
+    async (event) => {
+      if (!familyId) {
+        return;
+      }
+      try {
+        const trigger =
+          Platform.OS === 'android'
+            ? { seconds: 1, channelId: PENDING_APPROVAL_NOTIFICATION_CHANNEL }
+            : null;
+
+        await Notifications.scheduleNotificationAsync({
+          content: {
+            title: PENDING_APPROVAL_NOTIFICATION_TITLE,
+            body: PENDING_APPROVAL_NOTIFICATION_MESSAGE,
+            categoryIdentifier: PENDING_APPROVAL_NOTIFICATION_CATEGORY,
+            data: {
+              eventId: event?.id ?? '',
+              eventTitle: event?.title ?? '',
+              familyId,
+            },
+          },
+          trigger,
+        });
+      } catch (_notificationError) {
+        // Lokal notifikation er ikke kritisk for flowet, så fejl ignoreres.
+      }
+    },
+    [familyId]
+  );
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const resolveStatus = (response) => {
+      if (!response) {
+        return 'denied';
+      }
+      if (typeof response.status === 'string') {
+        return response.status;
+      }
+      return response.granted ? 'granted' : 'denied';
+    };
+
+    const ensureNotificationSetup = async () => {
+      try {
+        if (Platform.OS === 'android') {
+          await Notifications.setNotificationChannelAsync(
+            PENDING_APPROVAL_NOTIFICATION_CHANNEL,
+            {
+              name: 'Afventer godkendelse',
+              importance: Notifications.AndroidImportance.HIGH,
+              vibrationPattern: [0, 250, 250, 250],
+              lightColor: '#FFB74D',
+            }
+          );
+        }
+
+        await Notifications.setNotificationCategoryAsync(
+          PENDING_APPROVAL_NOTIFICATION_CATEGORY,
+          [
+            {
+              identifier: PENDING_APPROVAL_APPROVE_ACTION,
+              buttonTitle: 'Godkend',
+              options: {
+                isAuthenticationRequired: true,
+              },
+            },
+            {
+              identifier: PENDING_APPROVAL_REJECT_ACTION,
+              buttonTitle: 'Afvis',
+              options: {
+                isDestructive: true,
+              },
+            },
+          ]
+        );
+
+        const existingPermissions = await Notifications.getPermissionsAsync();
+        let finalStatus = resolveStatus(existingPermissions);
+
+        if (finalStatus !== 'granted') {
+          const requestedPermissions = await Notifications.requestPermissionsAsync();
+          finalStatus = resolveStatus(requestedPermissions);
+        }
+
+        if (isMounted) {
+          setNotificationsAllowed(finalStatus === 'granted');
+        }
+      } catch (_notificationError) {
+        if (isMounted) {
+          setNotificationsAllowed(false);
+        }
+      }
+    };
+
+    ensureNotificationSetup();
+
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!notificationsAllowed || !currentUserId) {
+      return;
+    }
+
+    const actionableEvents = pendingEvents.filter(
+      (event) =>
+        Array.isArray(event?.pendingApprovals) && event.pendingApprovals.includes(currentUserId)
+    );
+    const actionableIds = new Set(actionableEvents.map((event) => event.id));
+
+    const notifiedSet = notifiedPendingEventsRef.current;
+    for (const storedId of Array.from(notifiedSet)) {
+      if (!actionableIds.has(storedId)) {
+        notifiedSet.delete(storedId);
+      }
+    }
+
+    actionableEvents.forEach((event) => {
+      if (!event?.id || notifiedSet.has(event.id)) {
+        return;
+      }
+      sendPendingApprovalNotification(event);
+      notifiedSet.add(event.id);
+    });
+  }, [pendingEvents, currentUserId, notificationsAllowed, sendPendingApprovalNotification]);
 
   useEffect(() => {
     const handleAppStateChange = (nextState) => {
@@ -2170,10 +2311,3 @@ const initializeCalendarContext = useCallback(
 
 
 export default FamilyEventsScreen;
-
-
-
-
-
-
-

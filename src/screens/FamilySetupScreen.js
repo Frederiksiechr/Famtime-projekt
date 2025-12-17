@@ -13,14 +13,13 @@ import {
   Pressable,
   Alert,
 } from 'react-native';
-import * as Clipboard from 'expo-clipboard';
-
 import Button from '../components/Button';
 import FormInput from '../components/FormInput';
 import ErrorMessage from '../components/ErrorMessage';
 import { auth, db, firebase } from '../lib/firebase';
 import { colors } from '../styles/theme';
 import styles from '../styles/screens/FamilySetupScreenStyles';
+import { copyStringToClipboard } from '../utils/clipboard';
 
 const adjectives = [
   'glad',
@@ -1061,8 +1060,12 @@ const FamilySetupScreen = ({ navigation }) => {
             </View>
             <Pressable
               onPress={async () => {
-                await Clipboard.setStringAsync(existingFamily.id);
-                setCopyFeedback('Familie ID kopieret.');
+                const copied = await copyStringToClipboard(existingFamily.id);
+                setCopyFeedback(
+                  copied
+                    ? 'Familie ID kopieret.'
+                    : 'Kunne ikke kopiere. Opdater eller geninstaller din Expo app.'
+                );
                 setTimeout(() => setCopyFeedback(''), 2500);
               }}
               style={styles.copyIdButton}

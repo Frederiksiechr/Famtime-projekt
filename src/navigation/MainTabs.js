@@ -40,6 +40,7 @@ const MainTabs = () => {
 
   return (
     <Tab.Navigator
+      lazy={false}
       screenOptions={({ route }) => ({
         headerShown: false,
         tabBarActiveTintColor: colors.primary,
@@ -91,4 +92,3 @@ const MainTabs = () => {
 };
 
 export default MainTabs;
-
