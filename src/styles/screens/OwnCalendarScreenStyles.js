@@ -328,17 +328,53 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 4 },
     elevation: 1,
   },
+  autoSuggestionSponsorCard: {
+    borderColor: '#0F6B81',
+    backgroundColor: '#EEF9FF',
+  },
   autoSuggestionHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     gap: spacing.sm,
   },
+  autoSuggestionHeaderExtras: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
   autoSuggestionTitle: {
     fontSize: fontSizes.lg,
     fontWeight: '700',
     color: colors.text,
     flex: 1,
+  },
+  sponsorTagPill: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs,
+    borderRadius: radius.sm,
+    backgroundColor: '#D6F0FF',
+  },
+  sponsorTagText: {
+    fontSize: fontSizes.xs,
+    fontWeight: '700',
+    color: '#0E5B73',
+    letterSpacing: 0.5,
+  },
+  sponsorLogoBadge: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    backgroundColor: '#0E5B73',
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  sponsorLogoImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 18,
   },
   autoSuggestionTime: {
     fontSize: fontSizes.sm,
@@ -347,6 +383,16 @@ const styles = StyleSheet.create({
   autoSuggestionPreview: {
     fontSize: fontSizes.sm,
     color: colors.text,
+  },
+  autoSuggestionSponsorPreview: {
+    fontSize: fontSizes.sm,
+    color: colors.text,
+    fontWeight: '600',
+  },
+  autoSuggestionSponsorFootnote: {
+    fontSize: fontSizes.xs,
+    color: colors.mutedText,
+    marginTop: spacing.xs,
   },
   autoSuggestionDescription: {
     fontSize: fontSizes.sm,

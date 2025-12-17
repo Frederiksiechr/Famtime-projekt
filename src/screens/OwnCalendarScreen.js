@@ -18,6 +18,7 @@ import {
   KeyboardAvoidingView,
   AppState,
   Alert,
+  Image,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import DateTimePicker from '@react-native-community/datetimepicker';
@@ -46,6 +47,7 @@ import {
   FAMILY_PREFERENCE_MODES,
   normalizeFamilyPreferenceMode,
 } from '../constants/familyPreferenceModes';
+import rajissimoLogo from '../assets/rajissimo logo.png';
 
 const isIOS = Platform.OS === 'ios';
 const DEFAULT_EVENT_DURATION_MINUTES = 60;
@@ -55,6 +57,13 @@ const AUTO_SUGGESTION_QUEUE_LIMIT = 12;
 const PRIVATE_EVENT_TRAVEL_BUFFER_MINUTES = 30;
 const DEVICE_BUSY_POLL_INTERVAL_MS = 10 * 1000;
 const REMOTE_ACTIVITY_WEIGHT = 0.6;
+const SPONSOR_INSERT_INTERVAL = 5;
+const RAJISSIMO_SPONSOR_TITLE = 'Familietid med Rajissimo';
+const RAJISSIMO_SPONSOR_COPY =
+  'Besøg Rajissimo is, og få noget til den søde tand.';
+const RAJISSIMO_SPONSOR_SOURCE_LABEL = 'Rajissimo sponsoraktivitet';
+const RAJISSIMO_SPONSOR_START = new Date(2025, 11, 20, 13, 15);
+const RAJISSIMO_SPONSOR_END = new Date(2025, 11, 20, 14, 30);
 
 const SECTION_VARIANTS = {
   default: {
@@ -275,6 +284,8 @@ const OwnCalendarScreen = () => {
   const [autoSuggestions, setAutoSuggestions] = useState([]);
   const autoSlotQueueRef = useRef([]);
   const autoSlotCursorRef = useRef(0);
+  const suggestionSequenceRef = useRef(0);
+  const sponsorInstanceRef = useRef(0);
   const [autoSuggestionError, setAutoSuggestionError] = useState('');
   const [autoSuggestionNotice, setAutoSuggestionNotice] = useState('');
   const [autoActionId, setAutoActionId] = useState(null);
@@ -615,34 +626,66 @@ const OwnCalendarScreen = () => {
     [familyId, currentUserId, manualActivities, remoteActivities]
   );
 
+  const buildRajissimoSponsorSuggestion = useCallback(() => {
+    sponsorInstanceRef.current += 1;
+    return {
+      id: `rajissimo-sponsor-${sponsorInstanceRef.current}`,
+      slotId: `rajissimo-sponsor-slot-${sponsorInstanceRef.current}`,
+      start: new Date(RAJISSIMO_SPONSOR_START),
+      end: new Date(RAJISSIMO_SPONSOR_END),
+      title: RAJISSIMO_SPONSOR_TITLE,
+      description: RAJISSIMO_SPONSOR_COPY,
+      priceLabel: '',
+      preview: RAJISSIMO_SPONSOR_COPY,
+      activitySource: RAJISSIMO_SPONSOR_SOURCE_LABEL,
+      sourceType: 'sponsor',
+      isSponsor: true,
+    };
+  }, []);
+
   const fillVisibleSuggestions = useCallback(
     (baseList = []) => {
       const base = Array.isArray(baseList) ? baseList.filter(Boolean) : [];
       const usedIds = new Set(base.map((item) => item.id));
       const next = [...base];
 
-      while (
-        next.length < AUTO_SUGGESTION_VISIBLE &&
-        autoSlotCursorRef.current < autoSlotQueueRef.current.length
-      ) {
+      while (next.length < AUTO_SUGGESTION_VISIBLE) {
+        const nextSequenceIndex = suggestionSequenceRef.current + 1;
+        if (nextSequenceIndex % SPONSOR_INSERT_INTERVAL === 0) {
+          const sponsorSuggestion = buildRajissimoSponsorSuggestion();
+          if (!usedIds.has(sponsorSuggestion.id)) {
+            next.push(sponsorSuggestion);
+            usedIds.add(sponsorSuggestion.id);
+          }
+          suggestionSequenceRef.current += 1;
+          continue;
+        }
+
+        if (autoSlotCursorRef.current >= autoSlotQueueRef.current.length) {
+          break;
+        }
+
         const slot = autoSlotQueueRef.current[autoSlotCursorRef.current];
         autoSlotCursorRef.current += 1;
         const suggestion = buildSuggestionFromSlot(slot);
         if (suggestion && !usedIds.has(suggestion.id)) {
           next.push(suggestion);
           usedIds.add(suggestion.id);
+          suggestionSequenceRef.current += 1;
         }
       }
 
       return next;
     },
-    [buildSuggestionFromSlot]
+    [buildRajissimoSponsorSuggestion, buildSuggestionFromSlot]
   );
 
   useEffect(() => {
     if (!calendarEntries.length) {
       autoSlotQueueRef.current = [];
       autoSlotCursorRef.current = 0;
+      suggestionSequenceRef.current = 0;
+      sponsorInstanceRef.current = 0;
       setAutoSuggestions([]);
       setSuggestionLoading(false);
       setAutoSuggestionNotice('Ingen ledige tidsrum - juster præferencer.');
@@ -681,6 +724,8 @@ const OwnCalendarScreen = () => {
 
       autoSlotQueueRef.current = slots;
       autoSlotCursorRef.current = 0;
+      suggestionSequenceRef.current = 0;
+      sponsorInstanceRef.current = 0;
       setSuggestionLoading(false);
       setAutoSuggestionNotice(slots.length ? '' : 'Ingen ledige tidsrum - juster præferencer.');
       setAutoSuggestions(fillVisibleSuggestions([]));
@@ -690,6 +735,8 @@ const OwnCalendarScreen = () => {
       setSuggestionLoading(false);
       autoSlotQueueRef.current = [];
       autoSlotCursorRef.current = 0;
+      suggestionSequenceRef.current = 0;
+      sponsorInstanceRef.current = 0;
       setAutoSuggestions([]);
     }
   }, [
@@ -2358,41 +2405,82 @@ const OwnCalendarScreen = () => {
 
               {autoSuggestions.length ? (
                 <View style={styles.autoSuggestionList}>
-                  {autoSuggestions.map((suggestion) => (
-                    <View key={suggestion.id} style={styles.autoSuggestionCard}>
-                      <View style={styles.autoSuggestionHeader}>
-                        <Text style={styles.autoSuggestionTitle}>{suggestion.title}</Text>
-                        <Pressable
-                          onPress={() => handleOpenSuggestionPreview(suggestion)}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Læs mere om ${suggestion.title}`}
-                          style={styles.autoSuggestionEyeButton}
-                        >
-                          <Ionicons name="eye-outline" style={styles.autoSuggestionEyeIcon} />
-                        </Pressable>
+                  {autoSuggestions.map((suggestion) => {
+                    const isSponsorSuggestion = Boolean(suggestion?.isSponsor);
+                    return (
+                      <View
+                        key={suggestion.id}
+                        style={[
+                          styles.autoSuggestionCard,
+                          isSponsorSuggestion ? styles.autoSuggestionSponsorCard : null,
+                        ]}
+                      >
+                        {isSponsorSuggestion ? (
+                          <View style={styles.sponsorTagPill}>
+                            <Text style={styles.sponsorTagText}>Sponsoreret</Text>
+                          </View>
+                        ) : null}
+                        <View style={styles.autoSuggestionHeader}>
+                          <Text style={styles.autoSuggestionTitle}>{suggestion.title}</Text>
+                          <View style={styles.autoSuggestionHeaderExtras}>
+                            {isSponsorSuggestion ? (
+                              <View style={styles.sponsorLogoBadge}>
+                                <Image
+                                  source={rajissimoLogo}
+                                  style={styles.sponsorLogoImage}
+                                  resizeMode="contain"
+                                />
+                              </View>
+                            ) : null}
+                            <Pressable
+                              onPress={() => handleOpenSuggestionPreview(suggestion)}
+                              accessibilityRole="button"
+                              accessibilityLabel={`Læs mere om ${suggestion.title}`}
+                              style={styles.autoSuggestionEyeButton}
+                            >
+                              <Ionicons
+                                name="eye-outline"
+                                style={styles.autoSuggestionEyeIcon}
+                              />
+                            </Pressable>
+                          </View>
+                        </View>
+                        <Text style={styles.autoSuggestionTime}>
+                          {formatDateRange(suggestion.start, suggestion.end)}
+                        </Text>
+                        {suggestion.preview ? (
+                          <Text
+                            style={
+                              isSponsorSuggestion
+                                ? styles.autoSuggestionSponsorPreview
+                                : styles.autoSuggestionPreview
+                            }
+                          >
+                            {suggestion.preview}
+                          </Text>
+                        ) : null}
+                        {isSponsorSuggestion ? (
+                          <Text style={styles.autoSuggestionSponsorFootnote}>
+                            Rajissimo giver 15% på is, når du godkender aktiviteten.
+                          </Text>
+                        ) : null}
+                        <View style={styles.autoSuggestionActions}>
+                          <Button
+                            title="Godkend"
+                            onPress={() => handleAcceptAutoSuggestion(suggestion)}
+                            loading={autoActionId === suggestion.id}
+                            style={[styles.eventActionButton, styles.eventApproveButton]}
+                          />
+                          <Button
+                            title="Afvis"
+                            onPress={() => handleDismissAutoSuggestion(suggestion.id)}
+                            disabled={autoActionId === suggestion.id}
+                            style={[styles.eventActionButton, styles.eventRejectButton]}
+                          />
+                        </View>
                       </View>
-                      <Text style={styles.autoSuggestionTime}>
-                        {formatDateRange(suggestion.start, suggestion.end)}
-                      </Text>
-                      {suggestion.preview ? (
-                        <Text style={styles.autoSuggestionPreview}>{suggestion.preview}</Text>
-                      ) : null}
-                      <View style={styles.autoSuggestionActions}>
-                        <Button
-                          title="Godkend"
-                          onPress={() => handleAcceptAutoSuggestion(suggestion)}
-                          loading={autoActionId === suggestion.id}
-                          style={[styles.eventActionButton, styles.eventApproveButton]}
-                        />
-                        <Button
-                          title="Afvis"
-                          onPress={() => handleDismissAutoSuggestion(suggestion.id)}
-                          disabled={autoActionId === suggestion.id}
-                          style={[styles.eventActionButton, styles.eventRejectButton]}
-                        />
-                      </View>
-                    </View>
-                  ))}
+                    );
+                  })}
                 </View>
               ) : null}
 
