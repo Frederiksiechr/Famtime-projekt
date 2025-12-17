@@ -156,14 +156,6 @@ const formatClockLabel = (date) => {
   return `${hours}:${minutes}`;
 };
 
-const getDateKey = (date) => {
-  if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
-    return '';
-  }
-  return date.toISOString().slice(0, 10);
-};
-
-
 const getDurationLabel = (start, end) => {
   if (!(start instanceof Date) || !(end instanceof Date)) {
     return '';
@@ -230,8 +222,6 @@ const FamilyEventsScreen = () => {
   const [showEndPicker, setShowEndPicker] = useState(isIOS);
   const [suggestions, setSuggestions] = useState([]);
   const [suggestionNotice, setSuggestionNotice] = useState('');
-  const [suggestionSeed, setSuggestionSeed] = useState(0);
-  const [avoidSuggestionDateKey, setAvoidSuggestionDateKey] = useState('');
   const [selectedSuggestionId, setSelectedSuggestionId] = useState(null);
   const [activeSlotId, setActiveSlotId] = useState(null);
   const [builderVisible, setBuilderVisible] = useState(false);
@@ -263,7 +253,7 @@ const FamilyEventsScreen = () => {
   const [moodPreview, setMoodPreview] = useState(null);
   const [deviceBusyRefreshToken, setDeviceBusyRefreshToken] = useState(0);
   const deviceBusyLoadedRef = useRef('');
-  const notifiedPendingEventsRef = useRef(new Set());
+  const notifiedPendingEventsRef = useRef(new Map());
   const requestDeviceBusyRefresh = useCallback(() => {
     setDeviceBusyRefreshToken((token) => token + 1);
   }, []);
@@ -352,7 +342,7 @@ const FamilyEventsScreen = () => {
   const sendPendingApprovalNotification = useCallback(
     async (event) => {
       if (!familyId) {
-        return;
+        return null;
       }
       try {
         const trigger =
@@ -360,7 +350,7 @@ const FamilyEventsScreen = () => {
             ? { seconds: 1, channelId: PENDING_APPROVAL_NOTIFICATION_CHANNEL }
             : null;
 
-        await Notifications.scheduleNotificationAsync({
+        const identifier = await Notifications.scheduleNotificationAsync({
           content: {
             title: PENDING_APPROVAL_NOTIFICATION_TITLE,
             body: PENDING_APPROVAL_NOTIFICATION_MESSAGE,
@@ -373,12 +363,31 @@ const FamilyEventsScreen = () => {
           },
           trigger,
         });
+
+        return identifier;
       } catch (_notificationError) {
         // Lokal notifikation er ikke kritisk for flowet, så fejl ignoreres.
+        return null;
       }
     },
     [familyId]
   );
+
+  const clearNotificationById = useCallback(async (identifier) => {
+    if (!identifier) {
+      return;
+    }
+    try {
+      await Notifications.dismissNotificationAsync(identifier);
+    } catch (_dismissError) {
+      // Hvis notifikationen allerede er væk, ignorerer vi fejlen.
+    }
+    try {
+      await Notifications.cancelScheduledNotificationAsync(identifier);
+    } catch (_cancelError) {
+      // Hvis planlægningen er væk, ignorerer vi også denne fejl.
+    }
+  }, []);
 
   useEffect(() => {
     let isMounted = true;
@@ -453,7 +462,22 @@ const FamilyEventsScreen = () => {
   }, []);
 
   useEffect(() => {
+    const notifiedMap = notifiedPendingEventsRef.current;
+
+    const clearAllNotifiedEvents = () => {
+      if (!notifiedMap.size) {
+        return;
+      }
+      notifiedMap.forEach((entry) => {
+        if (entry?.notificationId) {
+          clearNotificationById(entry.notificationId);
+        }
+      });
+      notifiedMap.clear();
+    };
+
     if (!notificationsAllowed || !currentUserId) {
+      clearAllNotifiedEvents();
       return;
     }
 
@@ -463,21 +487,54 @@ const FamilyEventsScreen = () => {
     );
     const actionableIds = new Set(actionableEvents.map((event) => event.id));
 
-    const notifiedSet = notifiedPendingEventsRef.current;
-    for (const storedId of Array.from(notifiedSet)) {
+    Array.from(notifiedMap.entries()).forEach(([storedId, entry]) => {
       if (!actionableIds.has(storedId)) {
-        notifiedSet.delete(storedId);
+        notifiedMap.delete(storedId);
+        if (entry?.notificationId) {
+          clearNotificationById(entry.notificationId);
+        }
       }
-    }
+    });
 
     actionableEvents.forEach((event) => {
-      if (!event?.id || notifiedSet.has(event.id)) {
+      if (!event?.id || notifiedMap.has(event.id)) {
         return;
       }
-      sendPendingApprovalNotification(event);
-      notifiedSet.add(event.id);
+
+      const requestToken = Symbol('pending-approval-notification');
+      notifiedMap.set(event.id, { token: requestToken, notificationId: null });
+
+      sendPendingApprovalNotification(event)
+        .then((identifier) => {
+          const entry = notifiedMap.get(event.id);
+
+          if (!entry || entry.token !== requestToken) {
+            if (identifier) {
+              clearNotificationById(identifier);
+            }
+            return;
+          }
+
+          if (identifier) {
+            notifiedMap.set(event.id, { token: requestToken, notificationId: identifier });
+          } else {
+            notifiedMap.delete(event.id);
+          }
+        })
+        .catch(() => {
+          const entry = notifiedMap.get(event.id);
+          if (entry && entry.token === requestToken) {
+            notifiedMap.delete(event.id);
+          }
+        });
     });
-  }, [pendingEvents, currentUserId, notificationsAllowed, sendPendingApprovalNotification]);
+  }, [
+    pendingEvents,
+    currentUserId,
+    notificationsAllowed,
+    sendPendingApprovalNotification,
+    clearNotificationById,
+  ]);
 
   useEffect(() => {
     const handleAppStateChange = (nextState) => {
@@ -1114,7 +1171,7 @@ const FamilyEventsScreen = () => {
       globalBusyIntervals,
       maxSuggestions: TOTAL_SUGGESTION_TARGET,
       defaultSlotDurationMinutes: DEFAULT_EVENT_DURATION_MINUTES,
-      seedKey: `${familyId || currentUserId || 'famtime'}-${suggestionSeed}`,
+      seedKey: familyId || currentUserId || 'famtime',
     });
 
     const slots = Array.isArray(availabilityResult.slots)
@@ -1139,47 +1196,23 @@ const FamilyEventsScreen = () => {
       end: slot.end,
     }));
 
-    if (avoidSuggestionDateKey && nextSuggestions.length) {
-      const alternativeIndex = nextSuggestions.findIndex(
-        (item) => getDateKey(item.start) !== avoidSuggestionDateKey
-      );
-      if (alternativeIndex > 0) {
-        nextSuggestions = [
-          ...nextSuggestions.slice(alternativeIndex),
-          ...nextSuggestions.slice(0, alternativeIndex),
-        ];
-      }
-    }
-
     const limitedSuggestions = nextSuggestions.slice(0, SUGGESTION_LIMIT);
 
     setSuggestionNotice('');
     setSuggestions(limitedSuggestions);
-    setAvoidSuggestionDateKey('');
     setSelectedSuggestionId(null);
     setActiveSlotId(limitedSuggestions[0]?.id ?? null);
   }, [
     calendarEntries,
     availabilityUserPreferences,
     globalBusyIntervals,
-    suggestionSeed,
     familyId,
     currentUserId,
-    avoidSuggestionDateKey,
   ]);
 
   useEffect(() => {
     buildSuggestions();
   }, [buildSuggestions]);
-
-  const handleRegenerateSuggestions = () => {
-    const currentFirst = sortedSuggestions[0];
-    const dateKey = currentFirst ? getDateKey(currentFirst.start) : '';
-    if (dateKey) {
-      setAvoidSuggestionDateKey(dateKey);
-    }
-    setSuggestionSeed((prev) => prev + 1);
-  };
 
   const handleSelectSuggestion = (suggestion) => {
     setSelectedSuggestionId(suggestion.id);
@@ -2115,49 +2148,42 @@ const initializeCalendarContext = useCallback(
                     </View>
 
                     {sortedSuggestions.length ? (
-                      <>
-                        <ScrollView
-                          horizontal
-                          showsHorizontalScrollIndicator={false}
-                          style={styles.slotScrollWrapper}
-                          contentContainerStyle={styles.slotScrollContent}
-                        >
-                          {sortedSuggestions.map((suggestion) => {
-                            const isActive =
-                              activeSuggestion && suggestion.id === activeSuggestion.id;
-                            return (
-                              <Pressable
-                                key={suggestion.id}
-                                onPress={() => handleSelectSuggestion(suggestion)}
-                                style={[
-                                  styles.slotCard,
-                                  isActive ? styles.slotCardActive : null,
-                                ]}
-                                accessibilityRole="button"
-                                accessibilityState={{ selected: isActive }}
-                                accessibilityLabel={`Ledig dato ${formatDateBadge(
-                                  suggestion.start
-                                )}`}
-                              >
-                                <Text style={styles.slotDate}>
-                                  {formatDateBadge(suggestion.start)}
-                                </Text>
-                                <Text style={styles.slotTime}>
-                                  {formatTimeRange(suggestion.start, suggestion.end)}
-                                </Text>
-                                {isActive && activeDurationLabel ? (
-                                  <Text style={styles.slotDuration}>{activeDurationLabel}</Text>
-                                ) : null}
-                              </Pressable>
-                            );
-                          })}
-                        </ScrollView>
-                        <Button
-                          title="Få 6 nye forslag"
-                          onPress={handleRegenerateSuggestions}
-                          style={styles.newSuggestionsButton}
-                        />
-                      </>
+                      <ScrollView
+                        horizontal
+                        showsHorizontalScrollIndicator={false}
+                        style={styles.slotScrollWrapper}
+                        contentContainerStyle={styles.slotScrollContent}
+                      >
+                        {sortedSuggestions.map((suggestion) => {
+                          const isActive =
+                            activeSuggestion && suggestion.id === activeSuggestion.id;
+                          return (
+                            <Pressable
+                              key={suggestion.id}
+                              onPress={() => handleSelectSuggestion(suggestion)}
+                              style={[
+                                styles.slotCard,
+                                isActive ? styles.slotCardActive : null,
+                              ]}
+                              accessibilityRole="button"
+                              accessibilityState={{ selected: isActive }}
+                              accessibilityLabel={`Ledig dato ${formatDateBadge(
+                                suggestion.start
+                              )}`}
+                            >
+                              <Text style={styles.slotDate}>
+                                {formatDateBadge(suggestion.start)}
+                              </Text>
+                              <Text style={styles.slotTime}>
+                                {formatTimeRange(suggestion.start, suggestion.end)}
+                              </Text>
+                              {isActive && activeDurationLabel ? (
+                                <Text style={styles.slotDuration}>{activeDurationLabel}</Text>
+                              ) : null}
+                            </Pressable>
+                          );
+                        })}
+                      </ScrollView>
                     ) : (
                       <Text style={styles.suggestionEmptyText}>
                         Ingen ledige datoer fundet endnu. Opdater familiepræferencer

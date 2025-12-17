@@ -550,26 +550,15 @@ const AISuggestion = ({
     setError('');
     setSuggestion('');
     const requestMoodKey = selectedMood.key;
-    console.log('[AISuggestion] handleGenerate', {
-      mood: requestMoodKey,
-      usingProxy: Boolean(proxyUrl),
-      hasDirectKey: Boolean(directApiKey),
-    });
-
     if (proxyUrl) {
       const currentUser = auth.currentUser;
       if (!currentUser) {
-        console.log('[AISuggestion] proxy flow blocked - user not logged in');
         applySuggestion(fallbackSuggestion);
         setError('Log ind for at hente AI-forslag. Viser lokalt bud.');
         return;
       }
 
       setLoading(true);
-      console.log('[AISuggestion] proxy flow - sending request', {
-        mood: selectedMood.key,
-        hasPreferredDays: profile.preferredDays.length > 0,
-      });
       try {
         const idToken = await currentUser.getIdToken();
         const response = await fetch(proxyUrl, {
@@ -605,10 +594,6 @@ const AISuggestion = ({
 
         const data = await response.json();
         const text = sanitizeString(data?.suggestion);
-        console.log('[AISuggestion] proxy flow response', {
-          hasSuggestion: Boolean(text),
-        });
-
         if (!text) {
           throw new Error('Tomt svar fra proxy.');
         }
@@ -633,7 +618,6 @@ const AISuggestion = ({
     }
 
     if (!directApiKey) {
-      console.log('[AISuggestion] falling back - no OpenAI API key configured');
       applySuggestion(fallbackSuggestion);
       setError(
         'Opsæt OPENAI_PROXY_URL eller backend-proxy for ægte AI-forslag. Viser lokalt bud.'
@@ -642,9 +626,6 @@ const AISuggestion = ({
     }
 
     setLoading(true);
-    console.log('[AISuggestion] direct OpenAI flow - sending request', {
-      model: directModel,
-    });
     try {
       const response = await fetch(
         'https://api.openai.com/v1/chat/completions',
@@ -669,9 +650,6 @@ const AISuggestion = ({
       const text =
         data?.choices?.[0]?.message?.content?.trim() ||
         data?.choices?.[0]?.text?.trim();
-      console.log('[AISuggestion] direct OpenAI flow response', {
-        hasSuggestion: Boolean(text),
-      });
 
       if (!text) {
         throw new Error('Tomt svar fra OpenAI.');
