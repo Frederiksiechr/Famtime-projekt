@@ -1,8 +1,17 @@
 ﻿/**
  * FamilyEventsScreen
  *
- * - Viser familiens kommende begivenheder opdelt i godkendte og afventende.
- * - Administratorer kan godkende afventende begivenheder direkte fra listen.
+ * Hvad goer filen for appen:
+ * - Viser familiens events (afventende/godkendte) og lader brugere/admin godkende/afvise eller foreslaa aendringer.
+ * - Genererer og præsenterer forslag (AI + lokale slots) og kan synke godkendte events til enhedens kalender.
+ * - Haandterer notifikationer ved afventende godkendelser og holder busy/præferencer opdateret for alle medlemmer.
+ *
+ * Overblik (hvordan filen er bygget op):
+ * - Helpers: formatteringer (dato/tid/labels) + suggestion utilities.
+ * - State: familie/events, formular til nye events, forslag/mood, kalenderkontekst/device-busy, notifications/locks.
+ * - Dataflow: lytter på family/events i Firestore, henter medlemmers præferencer/busy (shared/device), og bygger availability-slots.
+ * - Handlinger: opret/ændr event, godkend/afvis, send notifikationer, sync til device-kalender, AI-forslag.
+ * - UI: statuskort, forslagspanel, sektioner for afventende/godkendte, modaler til oprettelse/foreslaa ændringer.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -78,6 +87,17 @@ const isSameDay = (a, b) => {
   );
 };
 
+/**
+ * FORMATERING AF DATO-BADGE
+ * 
+ * Konverterer en dato til et kort format for at vise i UI:
+ * - Format: "Tirs. 17. dec"
+ * 
+ * Bruges til at vise dato på events og forslag på en kompakt måde.
+ * 
+ * Eksempel:
+ * - Input: Date(2025-12-17) → Output: "Tirs. 17. dec"
+ */
 const formatDateBadge = (date) => {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
     return 'Ukendt dato';
@@ -92,6 +112,15 @@ const formatDateBadge = (date) => {
     .replace('.', '');
 };
 
+
+/**
+ * GØR FØRSTE BOGSTAV STORT
+ * 
+ * Konverterer første bogstav i en tekst til stort:
+ * - Input: "mandag" → Output: "Mandag"
+ * 
+ * Bruges til formatering af dage og måneder når de skal vises på dansk.
+ */
 const capitalizeWord = (value) => {
   if (typeof value !== 'string' || !value.length) {
     return '';
@@ -99,6 +128,20 @@ const capitalizeWord = (value) => {
   return value.charAt(0).toUpperCase() + value.slice(1);
 };
 
+
+/**
+ * FORMATERING AF TIDSINTERVAL
+ * 
+ * Konverterer start- og sluttid til et læseligt format:
+ * - Samme dag: "14:30 - 16:00"
+ * - Forskellige dage: "14:30 -> Tirs. 18. dec 10:00"
+ * 
+ * Bruges til at vise begivenheders tidspunkt.
+ * 
+ * Eksempel:
+ * - Input: 14:30 til 16:00 (samme dag) → Output: "14:30 - 16:00"
+ * - Input: 14:30 til næste dag 10:00 → Output: "14:30 -> Tirs. 18. dec 10:00"
+ */
 const formatTimeRange = (start, end) => {
   if (!(start instanceof Date) || Number.isNaN(start.getTime())) {
     return 'Ukendt tidspunkt';
@@ -131,6 +174,18 @@ const formatTimeRange = (start, end) => {
   return `${startLabel} -> ${endDateLabel.replace('.', '')} ${endLabel}`;
 };
 
+
+/**
+ * FORMATERING AF VALGT DATO-LABEL
+ * 
+ * Konverterer en dato til et fuldt dansk format for dato-picker:
+ * - Format: "Tirsdag 17. december"
+ * 
+ * Bruges når brugeren skal vælge en dato til en ny begivenhed.
+ * 
+ * Eksempel:
+ * - Input: Date(2025-12-17) → Output: "Tirsdag 17. december"
+ */
 const formatSelectedDateLabel = (date) => {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
     return 'Ukendt dag';
@@ -147,6 +202,18 @@ const formatSelectedDateLabel = (date) => {
   return `${weekday} ${dayNumber}. ${monthLabel}`;
 };
 
+
+/**
+ * FORMATERING AF KLOKKE-LABEL
+ * 
+ * Konverterer en tid til HH:MM format:
+ * - Format: "14:30"
+ * 
+ * Bruges til time-picker knapper i opret-event form.
+ * 
+ * Eksempel:
+ * - Input: Date med time=14, minut=30 → Output: "14:30"
+ */
 const formatClockLabel = (date) => {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
     return '';
@@ -156,6 +223,21 @@ const formatClockLabel = (date) => {
   return `${hours}:${minutes}`;
 };
 
+
+/**
+ * FORMATERING AF VARIGHED
+ * 
+ * Konverterer en tidsperiode til et kort format for hvor lang begivenhed varer:
+ * - 60 minutter → "1 time"
+ * - 120 minutter → "2 timer"
+ * - 45 minutter → "45 min"
+ * - 90+ minutter → "1,5 timer"
+ * 
+ * Bruges til at vise varighed af events.
+ * 
+ * Eksempel:
+ * - Input: start 14:00, slut 15:30 → Output: "1,5 timer"
+ */
 const getDurationLabel = (start, end) => {
   if (!(start instanceof Date) || !(end instanceof Date)) {
     return '';
@@ -179,8 +261,18 @@ const getDurationLabel = (start, end) => {
   return `${diffMinutes} min`;
 };
 
+
+/**
+ * OPRET STANDARD EVENT STATE
+ * 
+ * Opretter en ny begivenhed med default tidspunkt:
+ * - Start: nu (afrundet til hele minutter)
+ * - Slut: 1 time efter start
+ * - Titel og beskrivelse: tomt
+ * 
+ * Bruges når brugeren vil oprette en ny begivenhed.
+ */
 const createDefaultEventState = () => {
-  // Initialiserer formularfelter med et start- og sluttidspunkt i nær fremtid.
   const start = new Date();
   start.setSeconds(0, 0);
   const end = new Date(start.getTime() + DEFAULT_EVENT_DURATION_MINUTES * 60000);
@@ -193,6 +285,18 @@ const createDefaultEventState = () => {
   };
 };
 
+
+/**
+ * FORMATERING AF DATO OG TID
+ * 
+ * Konverterer en dato til fuldt format med både dato og klokkeslæt:
+ * - Format: "17/12/2025 kl. 14:30"
+ * 
+ * Bruges til at vise præcist tidspunkt i tekstform.
+ * 
+ * Eksempel:
+ * - Input: Date(2025-12-17 14:30) → Output: "17/12/2025 kl. 14:30"
+ */
 const formatDateTime = (date) => {
   if (!(date instanceof Date) || Number.isNaN(date.getTime())) {
     return 'Ukendt tidspunkt';
@@ -205,6 +309,9 @@ const formatDateTime = (date) => {
 };
 
 const FamilyEventsScreen = () => {
+  // Samler alt state omkring familiens events, forslag og kalenderintegration.
+  // Overblik: henter familie- og kalenderdata, bygger forslag og viser/administrerer events.
+  // State er grupperet i: familie/events, formular til nye events, forslag/mood, kalendersynk og devices.
   // Samler alt state omkring familiens events, forslag og kalenderintegration.
   const navigation = useNavigation();
   const [loading, setLoading] = useState(true);
@@ -335,6 +442,12 @@ const FamilyEventsScreen = () => {
     return `Forslag ${index + 1} af ${sortedSuggestions.length}`;
   }, [sortedSuggestions, activeSuggestion]);
 
+  /**
+   * VIS EVENT-BUILDER
+   * 
+   * Åbner formularen til at oprette en ny begivenhed.
+   * Brugeren kan her udfylde titel, beskrivelse, dato og tid.
+   */
   const handleRevealBuilder = useCallback(() => {
     setBuilderVisible(true);
   }, []);
@@ -1070,6 +1183,17 @@ const FamilyEventsScreen = () => {
     return mergeBusyIntervals([...confirmedBusy, ...pendingBusy], []);
   }, [confirmedEvents, pendingEvents]);
 
+  /**
+   * ÅBN FORM TIL AT OPRETTE EVENT
+   * 
+   * Åbner formularen til at oprette en ny begivenhed.
+   * Hvis der vælges et forslag, bliver Start- og sluttid udfyldt med forslaget.
+   * 
+   * Eksempel:
+   * - Bruger klikker på et tidspunkt i forslagspanelet
+   * - Formularen åbnes med det valgte tidspunkt som default
+   * - Bruger kan ændre titel, beskrivelse etc.
+   */
   const handleOpenCreateForm = (suggestion = null, overrides = {}) => {
   if (!familyId) {
     Alert.alert(
@@ -1100,11 +1224,27 @@ const FamilyEventsScreen = () => {
   setFormVisible(true);
 };
 
+
+  /**
+   * LUK EVENT-FORM
+   * 
+   * Lukker formularen til at oprette/redigere en begivenhed.
+   * Alle felter nulstilles.
+   */
   const handleCloseForm = () => {
     setFormVisible(false);
     resetFormState();
   };
 
+  /**
+   * REDIGER EVENT-FORMULAR FELT
+   * 
+   * Opdaterer en værdi i formularen (titel, beskrivelse etc.)
+   * 
+   * Eksempel:
+   * - Field: "title", Value: "Familieaften"
+   * - Formularen opdateres til at vise "Familieaften" i titel-feltet
+   */
   const handleChangeFormField = (field, value) => {
     setFormData((prev) => ({
       ...prev,
@@ -1112,6 +1252,12 @@ const FamilyEventsScreen = () => {
     }));
   };
 
+  /**
+   * SKIFT START-DATO
+   * 
+   * Når brugeren ændrer start-datoen på begivenheden.
+   * Slut-tidspunktet justeres hvis det er før start.
+   */
   const handleStartDateChange = (_event, selectedDate) => {
     if (selectedDate) {
       const rounded = new Date(selectedDate);
@@ -1129,6 +1275,13 @@ const FamilyEventsScreen = () => {
     }
   };
 
+
+  /**
+   * SKIFT SLUT-DATO
+   * 
+   * Når brugeren ændrer slut-datoen på begivenheden.
+   * Validerer at slut-tid er efter start-tid.
+   */
   const handleEndDateChange = (_event, selectedDate) => {
     if (selectedDate) {
       const rounded = new Date(selectedDate);
@@ -1145,16 +1298,40 @@ const FamilyEventsScreen = () => {
     }
   };
 
+  /**
+   * LUKNINGSZONE TIL FORM-MODAL
+   * 
+   * Hvis brugeren klikker uden for formularen, lukkes den (hvis man ikke er ved at gemme).
+   */
   const handleBackdropPress = () => {
     if (!formSaving) {
       handleCloseForm();
     }
   };
 
+  /**
+   * FORHINDRER MODAL LUKNING
+   * 
+   * Når brugeren klikker inden for modal-kortet, skal klikket ikke lukke modalen.
+   */
   const handleModalCardPress = (event) => {
     event?.stopPropagation?.();
   };
 
+  /**
+   * BYGGE FORSLAG TIL BEGIVENHEDER
+   * 
+   * Analyserer hele familiens kalendre de næste 21 dage for at finde tidspunkter
+   * hvor alle medlemmer er ledige.
+   * 
+   * Resultat:
+   * - Liste af 24 forskellige tidspunkter hvor hele familien kan mødes
+   * - Sorteret efter tidligste først
+   * 
+   * Eksempel:
+   * - Mandag 09:00-10:00: hele familien er ledig
+   * - Tirsdag 14:30-15:30: hele familien er ledig
+   */
   const buildSuggestions = useCallback(() => {
     const periodStart = new Date();
     periodStart.setSeconds(0, 0);
@@ -1453,6 +1630,18 @@ const initializeCalendarContext = useCallback(
     []
   );
 
+
+  /**
+   * GEM NY BEGIVENHED
+   * 
+   * Når brugeren udfylder og gemmer en ny begivenhed:
+   * 1. Validerer at titel og tid er udfyldt
+   * 2. Gemmer begivenheden i databasen som "afventende godkendelse"
+   * 3. Sender notifikation til familie-administrator
+   * 4. Synkroniserer til brugerens enhedskalender
+   * 
+   * Begivenheden bliver ikke planlagt før en administrator har godkendt den.
+   */
   const handleSubmitEvent = async (eventState = null) => {
     const data = eventState ?? formData ?? {};
 
@@ -1758,6 +1947,64 @@ const initializeCalendarContext = useCallback(
 
         const refs = { ...familyCalendarRefsRef.current };
 
+        const normalizeCalendarEventId = (value) => {
+          if (typeof value === 'string') {
+            const trimmed = value.trim();
+            return trimmed.length ? trimmed : null;
+          }
+
+          if (typeof value === 'number' && Number.isFinite(value)) {
+            return String(value);
+          }
+
+          return null;
+        };
+
+        const isNotFoundCalendarError = (error) => {
+          if (error?.code === 'E_EVENT_NOT_FOUND') {
+            return true;
+          }
+
+          const message = typeof error?.message === 'string' ? error.message : '';
+          return /not found|does not exist|could not be found/i.test(message);
+        };
+
+        const safeDeleteCalendarEventAsync = async (calendarEventId, options = {}) => {
+          const normalizedId = normalizeCalendarEventId(calendarEventId);
+          if (!normalizedId) {
+            return false;
+          }
+
+          try {
+            await Calendar.deleteEventAsync(normalizedId);
+            return true;
+          } catch (deleteError) {
+            if (!options.warnOnFailure) {
+              return false;
+            }
+
+            if (isNotFoundCalendarError(deleteError)) {
+              return false;
+            }
+
+            let stillExists = null;
+            try {
+              const existingEvent = await Calendar.getEventAsync(normalizedId);
+              stillExists = Boolean(existingEvent);
+            } catch (getEventError) {
+              if (isNotFoundCalendarError(getEventError)) {
+                stillExists = false;
+              }
+            }
+
+            if (stillExists !== false) {
+              console.warn('[FamilyEvents] deleteEventAsync failed', deleteError);
+            }
+
+            return false;
+          }
+        };
+
         for (const event of confirmed) {
           const start =
             event.start instanceof Date && !Number.isNaN(event.start.getTime())
@@ -1829,7 +2076,7 @@ const initializeCalendarContext = useCallback(
                   recreatedId !== existingEntry.calendarEventId
                 ) {
                   try {
-                    await Calendar.deleteEventAsync(existingEntry.calendarEventId);
+                    await safeDeleteCalendarEventAsync(existingEntry.calendarEventId);
                   } catch (_deleteError) {
                     // Kan være slettet manuelt; ignorer fejlen og behold den nye reference.
                   }
@@ -1863,11 +2110,12 @@ const initializeCalendarContext = useCallback(
         for (const [eventId, entry] of Object.entries(refs)) {
           if (!confirmedIds.has(eventId)) {
             if (entry?.calendarEventId) {
-              try {
-                await Calendar.deleteEventAsync(entry.calendarEventId);
+              const deleted = await safeDeleteCalendarEventAsync(
+                entry.calendarEventId,
+                { warnOnFailure: true }
+              );
+              if (deleted) {
                 deviceCalendarChanged = true;
-              } catch (deleteError) {
-                console.warn('[FamilyEvents] deleteEventAsync failed', deleteError);
               }
             }
             delete refs[eventId];
@@ -2187,7 +2435,7 @@ const initializeCalendarContext = useCallback(
                     ) : (
                       <Text style={styles.suggestionEmptyText}>
                         Ingen ledige datoer fundet endnu. Opdater familiepræferencer
-                        under Konto → Opdater profil.
+                        under Konto ? Opdater profil.
                       </Text>
                     )}
                   </View>

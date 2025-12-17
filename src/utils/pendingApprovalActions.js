@@ -1,3 +1,7 @@
+/**
+ * Hjælpefunktioner til at håndtere lokale notifikations-actions for pending familieevents.
+ * Bruges når brugeren trykker "Godkend/Afvis" direkte fra notifikationen.
+ */
 import * as Notifications from 'expo-notifications';
 
 import { auth, db, firebase } from '../lib/firebase';
@@ -22,6 +26,7 @@ const toFirestoreTimestamp = (value) => {
   return null;
 };
 
+// Markerer et event som godkendt fra en notifikation (og opdaterer/aflyser ved behov).
 const approvePendingEvent = async ({ familyId, eventId, userId }) => {
   const docRef = getEventDocRef(familyId, eventId);
   const snapshot = await docRef.get();
@@ -82,6 +87,7 @@ const approvePendingEvent = async ({ familyId, eventId, userId }) => {
   return true;
 };
 
+// Afviser en ventende ændring/aflysning fra en notifikation.
 const rejectPendingChange = async ({ familyId, eventId }) => {
   const docRef = getEventDocRef(familyId, eventId);
   const snapshot = await docRef.get();
@@ -106,6 +112,7 @@ const rejectPendingChange = async ({ familyId, eventId }) => {
   return true;
 };
 
+// Entry-point fra Expo notifications: ruter godkend/afvis actions til Firestore.
 export const handlePendingApprovalNotificationResponse = async (response) => {
   try {
     const actionId = response?.actionIdentifier;

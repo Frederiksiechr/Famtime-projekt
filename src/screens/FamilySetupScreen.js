@@ -1,8 +1,14 @@
-/**
+﻿/**
  * FamilySetupScreen
  *
  * - Vises efter kalendersynkronisering og giver brugeren mulighed for at oprette eller tilslutte en familie.
  * - Opretter `families`-collection i Firestore og tilføjer medlemmer via e-mailopslag i `users`.
+ *
+ * Overblik:
+ * - Flow: bruger kan oprette en ny familie med kode/navn eller tilslutte sig en eksisterende via kode.
+ * - Data: læser/skriver `families/{id}` og brugerens `users/{uid}` (familyId/familyRole), holder family-snapshot live.
+ * - Handlinger: opret/tilslut familie, kopier kode, håndtér requests, overdrag ejerskab eller fjern medlem.
+ * - UI: formular til oprettelse/tilslutning, statusbeskeder, liste over medlemmer/requests med actions.
  */
 import React, { useEffect, useRef, useState } from 'react';
 import {
@@ -47,6 +53,12 @@ const nouns = [
   'havørn',
 ];
 
+/**
+ * FJERN DIAKRITISKE TEGN
+ * 
+ * Omregner "København" til "Kobenhavn" og "Åse" til "Ase".
+ * Dette bruges til at lave familie-koder der kan skrivesændret tydeligt.
+ */
 const stripDiacritics = (value) => {
   if (typeof value !== 'string') {
     return '';
@@ -57,6 +69,14 @@ const stripDiacritics = (value) => {
   return value;
 };
 
+/**
+ * NORMALISERING AF FAMILIE-KOD
+ * 
+ * Tager "Min Flotte Familie" eller "Mønster-Familie" og laver det til
+ * et familie-kode som "min-flotte-familie" eller "monsterbe-familie".
+ * 
+ * Koden bruges som unik identifikator når man inviterer andre til familien.
+ */
 const normalizeFamilyCode = (value) => {
   if (typeof value !== 'string') {
     return '';
@@ -70,6 +90,20 @@ const normalizeFamilyCode = (value) => {
   return sanitized.replace(/-+/g, '-').replace(/^-|-$/g, '');
 };
 
+/**
+ * BYGGE FAMILIE-KOD KANDIDATER
+ * 
+ * Når brugeren indtaster en familiekode, bygger vi flere varianter:
+ * - Original: "Min Familie"
+ * - Lowercase: "min familie"
+ * - Uden tegn: "min-familie"
+ * 
+ * Vi søger efter alle varianter i databasen for at finde familien,
+ * selvom brugeren skriver den anderledes.
+ * 
+ * Eksempel:
+ * - Input: "Min Familie" → Output: ["Min Familie", "min familie", "min-familie"]
+ */
 const buildFamilyCodeCandidates = (value) => {
   if (typeof value !== 'string') {
     return [];
@@ -101,8 +135,21 @@ const buildFamilyCodeCandidates = (value) => {
   return unique;
 };
 
+/**
+ * GENERÉR FAMILIE-KOD
+ * 
+ * Opretter et menneskeligt læsbart familie-ID ved tilfældig kombinering:
+ * - Adjektiv: "glad", "stolt", "rolig" etc.
+ * - Dyr: "ugle", "los", "delfin" etc.
+ * 
+ * Resultat: "glad-ugle", "stolt-los" etc.
+ * 
+ * Hvis koden allerede findes i databasen, prøver vi igen (op til 40 gange).
+ * Hvis intet virker, bruger vi Firestore's auto-genererede ID.
+ * 
+ * Fordel: meget nemmere at dele med familie end tilfældige numre.
+ */
 const generateFamilyCode = async () => {
-  // Finder et menneskeligt læsbart familie-ID og sikrer, at det er unikt i Firestore.
   const attempts = 40;
   for (let i = 0; i < attempts; i += 1) {
     const adjective = adjectives[Math.floor(Math.random() * adjectives.length)];
@@ -122,6 +169,7 @@ const generateFamilyCode = async () => {
 };
 
 const FamilySetupScreen = ({ navigation }) => {
+  // State-grupper: flow-mode (create/join), familieoplysninger, status/loader, og administrative handlinger.
   const [mode, setMode] = useState('create');
   const [familyName, setFamilyName] = useState('');
   const [familyCode, setFamilyCode] = useState('');
@@ -427,6 +475,17 @@ const FamilySetupScreen = ({ navigation }) => {
     }
   };
 
+  /**
+   * HÆM MEDLEM VISNINGS-NAVN
+   * 
+   * Finder det bedst tilgængelige navn for et medlem:
+   * 1. displayName: "Mor" eller "Far" (hvis brugeren har sat det)
+   * 2. name: "Hanne" (fra profilen)
+   * 3. email: "hanne@gmail.com" (fallback)
+   * 4. "familiemedlemmet" (hvis intet fundes)
+   * 
+   * Bruges til at vise medlemmers navne i UI.
+   */
   const getMemberDisplayLabel = (member) => {
     if (!member || typeof member !== 'object') {
       return 'familiemedlemmet';
@@ -451,6 +510,14 @@ const FamilySetupScreen = ({ navigation }) => {
     return 'familiemedlemmet';
   };
 
+  /**
+   * BEKRÆFT SLETNING AF FAMILIE
+   * 
+   * Viser en bekræftelsesdialog inden familien slettes.
+   * Kun familiens administrator kan slette den.
+   * 
+   * Advarsel: Dette sletter hele familien, og alle medlemmer mister medlemskabet.
+   */
   const confirmDeleteFamily = () => {
     if (!existingFamily?.id || existingFamily.ownerId !== userId) {
       return;
@@ -470,6 +537,12 @@ const FamilySetupScreen = ({ navigation }) => {
     );
   };
 
+  /**
+   * BEKRÆFT FJERN MEDLEM
+   * 
+   * Viser en dialog der beder ejeren bekræfte at et medlem skal fjernes.
+   * Kun ejeren kan fjerne medlemmer (ikke sig selv).
+   */
   const confirmRemoveMember = (member) => {
     if (
       !existingFamily?.id ||

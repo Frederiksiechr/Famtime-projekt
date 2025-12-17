@@ -1,8 +1,15 @@
-/**
+﻿/**
  * CalendarSyncScreen
  *
- * - Viser prompt efter profiloplysninger er gemt for at aktivere Apple-kalendersynkronisering.
- * - Håndterer rettigheder via expo-calendar og gemmer synk-status i Firestore under `calendar/{uid}`.
+ * Hvad goer filen for appen:
+ * - Beder brugeren om kalenderadgang, finder en skrivbar kalender og gemmer status i Firestore (`calendar/{uid}`).
+ * - Viser feedback (fejl/succes) og sender brugeren videre til familieopsaetning.
+ *
+ * Overblik (hvordan filen er bygget op):
+ * - State: prompt/processing/status/label og userId.
+ * - Flow: request permissions -> find writable calendar -> persist status (permission/synced/calendarIds/title/platform).
+ * - UI: hero-tekst der skifter foer/efter synk, errorbox, knapper (fortsaet, proev igen, afvis).
+ * - Navigation: efter synk/afvis gaar videre til FamilySetup.
  */
 import React, { useMemo, useState } from 'react';
 import { View, Text, Modal, Pressable, Platform } from 'react-native';
@@ -13,12 +20,34 @@ import ErrorMessage from '../components/ErrorMessage';
 import { auth, db, firebase } from '../lib/firebase';
 import styles from '../styles/screens/CalendarSyncScreenStyles';
 
+/**
+ * FORMATERING AF KALENDER-NAVN
+ * 
+ * Konverterer en kalender-titel til et læseligt format:
+ * - Hvis der er en titel: viser titlen med anførselstegn (f.eks. "Apple Calendar")
+ * - Hvis der ingen titel: viser standardteksten "din kalender"
+ * 
+ * Bruges til at vise brugeren hvilken kalender der blev synkroniseret.
+ * 
+ * Eksempel:
+ * - Input: "Work Calendar" → Output: "Work Calendar"
+ * - Input: null eller "" → Output: "din kalender"
+ */
 const formatCalendarLabel = (calendarTitle) => {
   const trimmedTitle =
     typeof calendarTitle === 'string' ? calendarTitle.trim() : '';
   return trimmedTitle.length ? `"${trimmedTitle}"` : 'din kalender';
 };
 
+/**
+ * KALENDER SYNK SKÆRM
+ * 
+ * Denne skærm er første skridt efter login. Den spørger brugeren:
+ * "Må jeg få adgang til din kalender?"
+ * 
+ * Hvis ja: Vi finder brugerens kalender og gemmer hvilken i databasen,
+ * så vi senere kan synkronisere familiens events.
+ */
 const CalendarSyncScreen = ({ navigation }) => {
   const [promptVisible, setPromptVisible] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
@@ -27,8 +56,23 @@ const CalendarSyncScreen = ({ navigation }) => {
   const [calendarLabel, setCalendarLabel] = useState('din kalender');
 
   const userId = auth.currentUser?.uid ?? null;
+
+  /**
+   * GEM KALENDER-SYNK STATUS
+   * 
+   * Gemmer information om kalender-synkroniseringen i databasen (Firestore).
+   * Dette bruges senere til at:
+   * - Huske om brugeren accepterede eller afviste kalender-adgang
+   * - Vide hvilken kalender der skal bruges til at skrive events
+   * - Genkende hvis synkroniseringen fejlede
+   * 
+   * Eksempel på data der gemmes:
+   * - permission: "granted" eller "declined"
+   * - synced: true/false
+   * - calendarTitle: "Apple Calendar"
+   * - platform: "ios" eller "android"
+   */
   const persistCalendarStatus = async (payload) => {
-    // Gemmer den seneste synkroniseringsstatus i Firestore til senere opslag.
     if (!userId) {
       return;
     }
@@ -45,6 +89,17 @@ const CalendarSyncScreen = ({ navigation }) => {
       );
   };
 
+  /**
+   * ACCEPTER KALENDER-SYNK
+   * 
+   * Når brugeren trykker "Accepter":
+   * 1. Vi spørger iOS/Android om tilladelse til at læse brugerens kalender
+   * 2. Vi finder den bedste kalender at arbejde med (den der tillader ændringer)
+   * 3. Vi gemmer hvilket kalender-ID der skal bruges fremover
+   * 4. Vi opdaterer UI'et til at vise "Succes!"
+   * 
+   * Hvis tilladelsen bliver nægtet, vises der en fejlbesked til brugeren.
+   */
   const handleAccept = async () => {
     // Anmoder om kalenderadgang og udpeger en skrivbar kalender til synk.
     if (!userId) {
@@ -134,6 +189,16 @@ const CalendarSyncScreen = ({ navigation }) => {
     }
   };
 
+  /**
+   * AFSLÅ KALENDER-SYNK
+   * 
+   * Når brugeren trykker "Afslå":
+   * - Vi noterer at brugeren ikke vil dele deres kalender
+   * - Vi gemmer denne beslutning i databasen
+   * - Brugeren kan stadig bruge FamTime, men uden automatisk kalender-synkronisering
+   * 
+   * Brugeren kan senere ændre deres mening og acceptere kalender-adgang senere.
+   */
   const handleDecline = async () => {
     // Registrerer, at brugeren har valgt kalender-synkronisering fra.
     if (userId) {
@@ -147,6 +212,13 @@ const CalendarSyncScreen = ({ navigation }) => {
     setSyncCompleted(false);
   };
 
+  /**
+   * FORTSÆT TIL FAMILIE-SETUP
+   * 
+   * Når brugeren har valgt kalender-indstillinger (accepteret eller afvist):
+   * - Vi sender dem videre til næste skærm: "Opret eller tilslut en familie"
+   * - Det er der de kan invitere familiemedlemmer og starte planlægningen
+   */
   const handleContinue = () => {
     // Hopper videre til familieopsætningen efter kalendersynk-flowet.
     navigation.replace('FamilySetup');

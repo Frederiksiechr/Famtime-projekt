@@ -1,3 +1,7 @@
+﻿/**
+ * Konstanter og helper til familie-praeference modes (egen, følg, ingen).
+ * Bruges til baade formvaerdier og beregning af availability.
+ */
 export const FAMILY_PREFERENCE_MODES = {
   CUSTOM: 'custom',
   FOLLOW: 'follow',
@@ -7,7 +11,7 @@ export const FAMILY_PREFERENCE_MODES = {
 export const FAMILY_PREFERENCE_MODE_OPTIONS = [
   { key: FAMILY_PREFERENCE_MODES.CUSTOM, label: 'Tilpas selv' },
   { key: FAMILY_PREFERENCE_MODES.FOLLOW, label: 'Følg familie' },
-  { key: FAMILY_PREFERENCE_MODES.NONE, label: 'Ingen præferencer' },
+  { key: FAMILY_PREFERENCE_MODES.NONE, label: 'Ingen praeferencer' },
 ];
 
 export const normalizeFamilyPreferenceMode = (value) => {

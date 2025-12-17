@@ -3,6 +3,12 @@
  *
  * - Registrerer ny bruger i Firebase Auth og opretter matchende dokument i Firestore.
  * - Kontrakt: Navigeres til fra Login; forventer navigation-prop til at gå tilbage.
+ *
+ * Overblik:
+ * - Validerer e-mail/kodeord lokalt før oprettelse.
+ * - Opretter Firebase Auth-bruger og gemmer basisprofil i Firestore.
+ * - Viser fejl inline og giver link tilbage til login.
+ * - UI: simpel formular i et kort med header + tre inputfelter og call-to-action.
  */
 import React, { useState } from 'react';
 import {
@@ -24,7 +30,20 @@ import styles from '../styles/screens/SignupScreenStyles';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * OPRET KONTO SKÆRM
+ * 
+ * Her kan nye brugere oprette en konto.
+ * 
+ * Flowet:
+ * 1. Brugeren skriver email, adgangskode og gentager adgangskode
+ * 2. Vi validerer at alt er udfyldt og matchen
+ * 3. Vi opretter en Firebase Auth konto
+ * 4. Vi gemmer brugerens basisprofil i Firestore
+ * 5. Brugeren er nu registreret og kan logge ind
+ */
 const SignupScreen = ({ navigation }) => {
+  // Formularstate og fejlhåndtering for e-mail/kodeord.
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -32,6 +51,14 @@ const SignupScreen = ({ navigation }) => {
   const [authError, setAuthError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  /**
+   * VALIDERING AF OPRETTELSESFORMULAR
+   * 
+   * Tjekker at:
+   * - Email er udfyldt og ser ud som en rigtig email
+   * - Adgangskoden er mindst 6 tegn
+   * - Begge adgangskoder matcher hinanden
+   */
   const validate = () => {
     // Validerer formularfelter og bygger en samlet fejlliste.
     const nextErrors = {};
@@ -58,6 +85,15 @@ const SignupScreen = ({ navigation }) => {
     return Object.keys(nextErrors).length === 0;
   };
 
+  /**
+   * OPRETTELSE AF NY KONTO
+   * 
+   * Denne funktion:
+   * 1. Validerer input
+   * 2. Opretter en ny bruger i Firebase Auth
+   * 3. Gemmer brugerens email i Firestore under deres uid
+   * 4. Hvis noget fejler, viser vi en fejlbesked
+   */
   const handleSignup = async () => {
     // Opretter ny konto i Firebase og registrerer en basisprofil i Firestore.
     if (!validate()) {
@@ -88,6 +124,7 @@ const SignupScreen = ({ navigation }) => {
   };
 
   return (
+    // Layout: SafeArea + KeyboardAvoiding + ScrollView med header og kort med inputs/handlinger.
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.flex}

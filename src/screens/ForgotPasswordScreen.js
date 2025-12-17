@@ -1,8 +1,14 @@
-/**
+﻿/**
  * ForgotPasswordScreen
  *
- * - Sender reset-mail via Firebase Auth og viser succes-/fejlbesked.
- * - Kontrakt: Navigeres fra Login; forventer navigation-prop for at gå tilbage.
+ * Hvad goer filen for appen:
+ * - Giver brugeren en simpel maade at gendanne adgangskode ved at sende en reset-mail via Firebase Auth.
+ * - Viser tydelig feedback (fejl eller succes) og guider brugeren tilbage til login-flowet.
+ *
+ * Overblik (hvordan filen er bygget op):
+ * - State: email-input, field/auth fejl, succesbesked og loading.
+ * - Flow: valider email -> kald `sendPasswordResetEmail` -> vis succes/fejl.
+ * - UI: header + kort med emailfelt og knap til at sende reset-mail.
  */
 import React, { useState } from 'react';
 import {
@@ -23,13 +29,31 @@ import styles from '../styles/screens/ForgotPasswordScreenStyles';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * GLEMT ADGANGSKODE SKÆRM
+ * 
+ * Hvis brugeren har glemt sin adgangskode, kan de få sendt en reset-email
+ * ved at skrive deres email her.
+ * 
+ * Firebase sender så en email med et link hvor de kan sætte en ny adgangskode.
+ */
 const ForgotPasswordScreen = () => {
+  // Formularstate + feedback-tekster.
   const [email, setEmail] = useState('');
   const [fieldError, setFieldError] = useState('');
   const [authError, setAuthError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [loading, setLoading] = useState(false);
 
+  /**
+   * SEND RESET EMAIL
+   * 
+   * Denne funktion:
+   * 1. Validerer at email-feltet er udfyldt og ser ud som email
+   * 2. Sender reset-mail via Firebase
+   * 3. Viser succes-besked hvis det virker
+   * 4. Viser fejl-besked hvis det ikke virker
+   */
   const handleReset = async () => {
     // Sender reset-mail via Firebase og håndterer validering/feedback.
     if (!email.trim()) {
@@ -60,6 +84,7 @@ const ForgotPasswordScreen = () => {
   };
 
   return (
+    // Layout: SafeArea + KeyboardAvoiding + ScrollView med header og kort med input/handling.
     <SafeAreaView style={styles.safeArea}>
       <KeyboardAvoidingView
         style={styles.flex}

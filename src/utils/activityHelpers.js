@@ -1,3 +1,7 @@
+/**
+ * Helpers til aktivitetsforslag (deterministisk hash og udvælgelse af eksempler pr. humør).
+ * Bruges af AISuggestion og autoslot-generering til at vælge stabile forslag.
+ */
 import {
   WEEKDAY_ACTIVITIES,
   WEEKEND_ACTIVITIES,
@@ -33,6 +37,7 @@ export const pickMoodExamples = (
   moodKey = DEFAULT_MOOD_KEY,
   { isWeekend = false, count = 3, seed = '' } = {}
 ) => {
+  // Finder deterministiske katalogeksempler til et givent humør (bruges som AI-fallback).
   const catalog = isWeekend ? WEEKEND_ACTIVITIES : WEEKDAY_ACTIVITIES;
   if (!Array.isArray(catalog) || !catalog.length) {
     return [];

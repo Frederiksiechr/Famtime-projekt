@@ -4,6 +4,10 @@
  * - Lytter til Firebase Auth state og viser enten auth-stack eller app-stack.
  * - Holder appen i sync med onAuthStateChanged og viser en loading state under init.
  * - NavigationStrategy: AuthStack for uloggede brugere, AppStack for loggede.
+ *
+ * Laeseguide:
+ * - Hvis bruger ikke er logget ind: viser Login/Signup/ForgotPassword.
+ * - Hvis bruger er logget ind: viser Landing → (kalendersync/familieopsætning) → MainTabs.
  */
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, View, Text } from 'react-native';

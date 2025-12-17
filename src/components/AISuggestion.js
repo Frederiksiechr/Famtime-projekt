@@ -66,6 +66,16 @@ const DAY_PREFIX_VARIANTS = {
 
 const DEFAULT_NAME = 'FamTime-vennen';
 
+/**
+ * LÆSNING AF APP-INDSTILLINGER
+ * 
+ * Denne hjælper læser konfigurationsindstillinger for appen (som hvor OpenAI-nøglen
+ * er gemt). Den er sikker og vil ikke ødelægge noget hvis nogle indstillinger mangler.
+ * 
+ * Dette bruges til at finde ud af om appen skal bruge OpenAI direkte eller gennem
+ * en proxy-server.
+ */
+// Safely reads Expo extra config so missing manifest fields don't crash suggestion flow.
 const getExpoExtra = () => {
   const configExtra =
     Constants?.expoConfig?.extra ??
@@ -78,6 +88,15 @@ const getExpoExtra = () => {
   return {};
 };
 
+/**
+ * RENSNING AF TEKSTVÆRDIER
+ * 
+ * En hjælper som sikrer at alle tekstværdier er "rene" - fjerner uønskede
+ * mellemrum fra start og slut. Hvis der kommer noget der ikke er tekst,
+ * returnerer den bare tomt.
+ * 
+ * Dette beskytter hele systemet mod ødelagte eller uforventede data.
+ */
 const sanitizeString = (value) => {
   if (typeof value !== 'string') {
     return '';
@@ -85,6 +104,14 @@ const sanitizeString = (value) => {
   return value.trim();
 };
 
+/**
+ * OMFORMNING TIL STOR BEGYNDELSESBOGSTAV
+ * 
+ * Denne hjælper tager en tekst (som "hELLO wORLD") og formaterer den pænt
+ * med stor begyndelsesbogstav (som "Hello World").
+ * 
+ * Det bruges til at gøre brugernavne, byer osv. pæne når de vises til brugerne.
+ */
 const toTitleCase = (value) => {
   const clean = sanitizeString(value);
   if (!clean) {
@@ -95,6 +122,15 @@ const toTitleCase = (value) => {
     .replace(/(^|\s|-)(\S)/g, (_match, boundary, char) => `${boundary}${char.toUpperCase()}`);
 };
 
+/**
+ * LÆSNING AF BRUGERENS ALDER
+ * 
+ * En hjælper som læser en aldersværdi på en sikker måde. Alderen kunne være
+ * et tal, en tekst med tal i, eller helt forkert data - denne funktion håndterer
+ * alle situationerne og returnerer enten det rigtige tal eller ingenting.
+ * 
+ * Dette bruges til at bestemme hvilke aktiviteter der passer til familien.
+ */
 const parseAge = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -109,6 +145,16 @@ const parseAge = (value) => {
   return null;
 };
 
+/**
+ * FORMATERING AF AKTIVITET FOR AI
+ * 
+ * Denne hjælper præsenterer en aktivitet på en kort, præcis måde som AI'en
+ * nemt kan læse og arbejde med. Den fjerner unødige tegn og præsenterer
+ * kun den vigtigste information.
+ * 
+ * Eksempel: "Byferie — tone: family-friendly, humør: relaxed, note: shopping"
+ */
+// Short, prompt-friendly description of a catalog activity (removes brackets/extra whitespace).
 const describeActivityForPrompt = (activity) => {
   if (!activity) {
     return '';
@@ -125,6 +171,16 @@ const describeActivityForPrompt = (activity) => {
   }`;
 };
 
+/**
+ * VALG AF DAG
+ * 
+ * Denne funktion vælger en dag fra brugerens liste af foretrukne dage.
+ * Den bruger en "hash" (et tal baseret på brugerens data) for at sikre at
+ * den samme bruger altid får samme dag valgt - så forslagene er stabile.
+ * 
+ * Hvis brugeren ikke har nogen foretrukne dage, returnerer den intet.
+ */
+// Deterministic day pick based on hash + preferred days.
 const pickDay = (hashSeed, days) => {
   if (!Array.isArray(days) || !days.length) {
     return null;
@@ -147,6 +203,16 @@ const pickDay = (hashSeed, days) => {
   return ordered[hash % ordered.length];
 };
 
+/**
+ * VALG AF VARIANT BLANDT MULIGHEDER
+ * 
+ * En hjælper som vælger en "variant" fra en liste - eksempelvis vælger den en
+ * måde at formulere en sætning på (som "Mandag: " eller "Mandag plan: ").
+ * 
+ * Den bruger en hash for at sikre at samme bruger altid får samme variant valgt,
+ * så forslagene virker konsistente.
+ */
+// Deterministic list pick to keep suggestions stable across sessions.
 const pickVariant = (items, hashSeed, salt) => {
   if (!Array.isArray(items) || !items.length) {
     return null;
@@ -155,6 +221,19 @@ const pickVariant = (items, hashSeed, salt) => {
   return items[index];
 };
 
+/**
+ * VALG AF AKTIVITET
+ * 
+ * Denne funktion vælger en activity fra aktivitets-kataloget baseret på:
+ * - Om det er weekend eller hverdag
+ * - Familiens alder (barn, yngre voksen, voksen)
+ * - Familiens nuværende humør (afslappet, energisk, osv.)
+ * 
+ * Den bruger en hash for at sikre at samme bruger altid får samme aktivitet,
+ * selv hvis appen bruges offline eller uden internet. Det sikrer at forslagene
+ * er stabile og ikke ændrer sig hele tiden.
+ */
+// Picks a single activity matching mood/weekend/age, deterministic for offline fallback.
 const pickActivity = (hashSeed, isWeekend, age, moodKey = DEFAULT_MOOD_KEY) => {
   const catalog = isWeekend ? WEEKEND_ACTIVITIES : WEEKDAY_ACTIVITIES;
   const tonePreference =
@@ -227,6 +306,20 @@ const pickActivity = (hashSeed, isWeekend, age, moodKey = DEFAULT_MOOD_KEY) => {
   return catalogPick ?? catalog[0];
 };
 
+/**
+ * GENERERING AF FORSLAG BASERET PÅ PROFIL
+ * 
+ * Denne funktion er hjertet i "smart forslag" - den tager en families profil
+ * (navn, alder, by, foretrukne dage) og deres nuværende humør, og laver et
+ * personaliseret aktivitetsforslag.
+ * 
+ * Funktionen virker UDEN internet - den bruger kun data der allerede er i appen.
+ * Det betyder at selv hvis OpenAI-APIen ikke svarer, eller brugeren er offline,
+ * får familien stadig et brugbart forslag.
+ * 
+ * Eksempel resultat: "Lørdag: Besøg lokalt museum i København (sjovt for hele familien)"
+ */
+// Builds a consistent suggestion string from profile + mood (used for offline fallback and seeding).
 export const generateProfileSuggestion = (
   user = {},
   moodKey = DEFAULT_MOOD_KEY,
@@ -314,6 +407,22 @@ const normalizeMoodKey = (value) => {
     : null;
 };
 
+/**
+ * AI-FORSLAG KOMPONENT
+ * 
+ * Dette er den vigtigste React-komponent som viser et AI-personaliseret forslag
+ * til familien. Den viser:
+ * - Et aktivitetsforslag (enten fra AI eller lokalt backup)
+ * - Mulighed for at vælge familiens nuværende humør
+ * - En knap til at få nyt forslag
+ * 
+ * Komponenten håndterer alle fejlsituationer på elegant vis:
+ * - Hvis AI'en ikke svarer, vises det lokale forslag i stedet
+ * - Hvis brugeren ikke er logget ind, vises en besked
+ * - Hvis der ikke er forbindelse, bruges offline-forslagene
+ * 
+ * Brugeren kan også vælge forskellige humør, som påvirker næste forslag.
+ */
 const AISuggestion = ({
   user,
   onSuggestion,
@@ -545,6 +654,7 @@ const AISuggestion = ({
     selectedMood.prompt,
   ]);
 
+  // Henter forslag: bruger proxy hvis logget ind, ellers falder tilbage til lokalt seed.
   const handleGenerate = useCallback(async () => {
     setHasGenerated(true);
     setError('');

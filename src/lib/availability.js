@@ -1,8 +1,8 @@
-/**
+﻿/**
  * Utility helpers for finding mutual availability slots across multiple calendars.
  *
  * The algorithm works in five phases:
- * 1. Normalise input – busy ranges, preferences and time windows per user.
+ * 1. Normalise input â€“ busy ranges, preferences and time windows per user.
  * 2. Derive shared constraints (allowed weekdays, overlapping day windows, slot duration limits).
  * 3. Convert each user's busy list into free intervals within the planning horizon.
  * 4. Intersect all free interval lists to obtain common availability windows.
@@ -11,6 +11,11 @@
  *
  * All date math happens in UTC by default. If a `timeZone` is supplied we rely on
  * `Intl.DateTimeFormat` to fetch offsets for the target zone, so the environment must support it.
+ *
+ * Laeseguide:
+ * - Input: busy-intervaller og praef erencer (dage/vinduer, min/max varighed) pr. bruger.
+ * - Flow: normaliser input → find frie intervaller → find overlap → skær til konkrete slots.
+ * - Output: slots + metadata til forslag i UI.
  */
 
 const MS_PER_MINUTE = 60 * 1000;
@@ -52,21 +57,42 @@ const NORMALIZED_WEEKDAY_MAP = new Map(
     ['fredag', 'Fri'],
     ['saturday', 'Sat'],
     ['sat', 'Sat'],
-    ['l\u00f8rdag', 'Sat'],
     ['lordag', 'Sat'],
-    ['s\u00f8ndag', 'Sun'],
     ['sondag', 'Sun'],
   ]
 );
 
+/**
+ * HJÆLPER-FUNKTIONER - SIMPLE OPERATIONER
+ * 
+ * cloneWindows: Kopier en liste af tidsvinduer
+ * getDefaultWindowsForDayKey: Hvad er standard-tider for en dag?
+ * clampWindowsToQuietHours: Kan ikke være før kl. 06:00
+ * clamp: Sæt en værdi mellem min og max
+ * toDate: Konverter forskellige dato-formater til JavaScript Date
+ * 
+ * Disse hjælper bruges af de større funktioner til at håndtere data.
+ */
 const cloneWindows = (windows = []) =>
   windows.map((window) => ({ start: window.start, end: window.end }));
 
+/**
+ * STANDARD-VINDUER PR. DAG
+ * 
+ * Weekend er åbent tidligere (08:00) fordi folk sover længere.
+ * Hverdage går først kl. 13:30 fordi folk arbejder/er på skole.
+ */
 const getDefaultWindowsForDayKey = (dayKey) => {
   const template = WEEKEND_DAY_SET.has(dayKey) ? DEFAULT_WEEKEND_WINDOW : DEFAULT_WEEKDAY_WINDOW;
   return cloneWindows(template);
 };
 
+/**
+ * BEGRÆNS VINDUER TIL "STILLE TIMER"
+ * 
+ * Vi ønsker ikke aktiviteter før kl. 06:00 eller efter midnat.
+ * Denne funktion fjerner dele af vinduer der er uden for disse timer.
+ */
 const clampWindowsToQuietHours = (windows = []) =>
   windows
     .map((window) => {
@@ -79,6 +105,15 @@ const clampWindowsToQuietHours = (windows = []) =>
     })
     .filter((window) => Boolean(window));
 
+/**
+ * BEGRÆNSER EN VÆRDI
+ * 
+ * Hvis værdien er for lille, sæt den til min.
+ * Hvis værdien er for stor, sæt den til max.
+ * Hvis værdien er NaN eller null, sæt den til min.
+ * 
+ * Bruges til at sikre værdier er inden for rimelige grænser.
+ */
 const clamp = (value, min, max) => {
   if (Number.isNaN(value) || value == null) {
     return min;
@@ -92,6 +127,16 @@ const clamp = (value, min, max) => {
   return value;
 };
 
+/**
+ * KONVERTÉR TIL JAVASCRIPT DATE
+ * 
+ * Inputs kan være:
+ * - JavaScript Date (returner kopi)
+ * - Tal eller tekst (prøv at parse som dato)
+ * - Firebase Timestamp (har .toDate() metode)
+ * 
+ * Returnerer Date-objekt eller null hvis det ikke er en gyldig dato.
+ */
 const toDate = (value) => {
   if (!value) {
     return null;
@@ -119,6 +164,14 @@ const toDate = (value) => {
   return null;
 };
 
+/**
+ * NORMALISÉR DAGNAVN
+ * 
+ * Accepterer både engelsk ("Monday"), dansk ("Mandag"), forkortelser ("Mon")
+ * og returnerer en standard-format som "Mon".
+ * 
+ * Hvis ingenting passer, returneres null.
+ */
 const normalizeWeekdayKey = (value) => {
   if (typeof value !== 'string') {
     return null;
@@ -134,6 +187,16 @@ const normalizeWeekdayKey = (value) => {
   return mapped || null;
 };
 
+/**
+ * NORMALISÉR LISTE AF DAGE
+ * 
+ * Tager en liste af dagnavn (som "mandag", "Tuesday", "fri") og
+ * konverterer dem alle til standard-format.
+ * 
+ * Fjerner duplikater så hver dag kun er der en gang.
+ * 
+ * Hvis listen bliver tom, returneres null.
+ */
 const normalizeWeekdayList = (values) => {
   if (!values) {
     return null;
@@ -151,6 +214,14 @@ const normalizeWeekdayList = (values) => {
   return Array.from(new Set(normalized));
 };
 
+/**
+ * SKÆRING AF DAG-LISTER
+ * 
+ * Hvis Mor kan mandag+tirsdag og Far kan mandag+torsdag,
+ * så kan BEGGE kun mandag.
+ * 
+ * Denne funktion finder de dage der er i BÅDE base og next.
+ */
 const intersectWeekdaySets = (base, next) => {
   if (!base || !base.length) {
     return next ? [...next] : [];
@@ -162,6 +233,16 @@ const intersectWeekdaySets = (base, next) => {
   return base.filter((day) => nextSet.has(day));
 };
 
+/**
+ * PARSE TIDSSTRENG
+ * 
+ * Accepterer:
+ * - Tal som 120 (120 minutter)
+ * - Tekst som "2:30" (2 timer 30 minutter = 150 minutter)
+ * - Tekst som "14:00" (klokken 14:00 = 840 minutter fra midnat)
+ * 
+ * Returnerer minutter siden midnat, eller null hvis det ikke virker.
+ */
 const parseTimeStringToMinutes = (value) => {
   if (typeof value === 'number' && Number.isFinite(value)) {
     return value;
@@ -189,6 +270,16 @@ const parseTimeStringToMinutes = (value) => {
   return hours * 60 + minutes;
 };
 
+/**
+ * NORMALISÉR TIDSVINDUE
+ * 
+ * Et tidsvindue kan komme i mange formater:
+ * - String: "14:00-15:30" eller "840-930"
+ * - Objekt: { start: 840, end: 930 } eller { from: "14:00", to: "15:30" }
+ * 
+ * Denne funktion læser alle formater og returnerer { start, end }
+ * eller null hvis det er ugyldigt.
+ */
 const normalizeWindowEntry = (entry) => {
   if (!entry && entry !== 0) {
     return null;
@@ -1333,6 +1424,8 @@ export const findMutualAvailability = ({
   defaultSlotDurationMinutes = DEFAULT_SLOT_MINUTES,
   seedKey = '',
 } = {}) => {
+  // Hovedfunktion: returnerer faelles ledige tidsslots baseret paa busy tider + praef erencer for alle brugere.
+  // Trin-overblik: normaliser kalendere -> beregn constraints -> find frie intervaller -> byg dagsvinduer -> generer/filtrer slots.
   const planningStart = periodStart instanceof Date && !Number.isNaN(periodStart.getTime())
     ? new Date(periodStart)
     : new Date();
@@ -1344,6 +1437,7 @@ export const findMutualAvailability = ({
     return { slots: [], constraints: null };
   }
 
+  // 1) Normaliser input og tilfoej buffers omkring busy intervaller.
   const normalizedCalendars = calendars
     .map((calendar) => normalizeCalendarInput(calendar, { rangeStart: planningStart, rangeEnd: planningEnd }))
     .filter((calendar) => Boolean(calendar))
@@ -1362,6 +1456,7 @@ export const findMutualAvailability = ({
       };
     });
 
+  // 2) Udvid busy med buffers og afgraens til planlaegningsvinduet.
   const injectedCalendars = normalizedCalendars.map((calendar) => {
     const bufferedBusy = calendar.busy.map((interval) =>
       expandIntervalWithBuffer(interval, calendar.preferences.bufferBeforeMinutes, calendar.preferences.bufferAfterMinutes)
@@ -1377,6 +1472,7 @@ export const findMutualAvailability = ({
     };
   });
 
+  // Globale busy-intervaller (faelles blokeringer) flettes ind som en ekstra pseudo-bruger.
   const auxBusy = sortAndMergeDateIntervals(globalBusyIntervals)
     .map((interval) => clampIntervalToRange(interval, planningStart, planningEnd))
     .filter((interval) => Boolean(interval));
@@ -1389,6 +1485,7 @@ export const findMutualAvailability = ({
     });
   }
 
+  // 3) Afled gruppe-constraints (tidszoner, vinduer, min/max varighed, kvoter).
   const constraints = deriveGroupConstraints({
     calendars: injectedCalendars,
     groupPreferences: {
@@ -1408,6 +1505,7 @@ export const findMutualAvailability = ({
 
   const referenceParts = getZonedParts(planningStart, constraints.timeZone);
 
+  // 4) Find frie intervaller pr. bruger (invert busy) og find deres faelles overlap.
   const freeIntervalSets = injectedCalendars.map((calendar) => {
     if (!calendar.busy.length) {
       return [{ start: new Date(planningStart), end: new Date(planningEnd) }];
@@ -1424,6 +1522,7 @@ export const findMutualAvailability = ({
     return { slots: [], constraints };
   }
 
+  // 5) Byg dagsvinduer efter praef erencer/tidszone og faelles frie vinduer.
   const windows = buildDailyWindows({
     planningStart,
     planningEnd,
@@ -1440,6 +1539,7 @@ export const findMutualAvailability = ({
     return { slots: [], constraints };
   }
 
+  // 6) Generer kandidatslots og filtrer efter regler (same-day, overrun, ugekvote).
   const targetSuggestions = Math.max(1, Math.floor(maxSuggestions ?? 1));
   let candidateSlots = generateCandidateSlots(
     eligibleIntervals,
@@ -1503,3 +1603,4 @@ export const availabilityUtils = {
 };
 
 export default findMutualAvailability;
+

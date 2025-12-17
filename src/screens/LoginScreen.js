@@ -1,8 +1,16 @@
-/**
+﻿/**
  * LoginScreen
  *
- * - Varetager email/password-login med inputvalidering og brugervenlige fejl.
- * - Kontrakt: Rendes af navigation-stack og modtager `navigation` prop fra React Navigation.
+ * Hvad goer filen for appen:
+ * - Er indgangen til appen: her logger brugeren ind med e-mail og adgangskode via Firebase Auth.
+ * - Viser fejl paa en brugervenlig maade og giver genveje til "Glemt adgangskode" og "Opret konto".
+ * - Naar login lykkes, overtager RootNavigator og sender brugeren videre til resten af appens flow.
+ *
+ * Overblik (hvordan filen er bygget op):
+ * - State: email/password, felt-fejl, auth-fejl og loading.
+ * - Helpers: clear errors naar brugeren retter input, og `validate` til at tjekke felter foer login.
+ * - Flow: valider input -> kald `signInWithEmailAndPassword` -> ved fejl nulstilles session og fejl vises.
+ * - UI: header + kort med to felter, login-knap og links til andre auth-skærme.
  */
 import React, { useState } from 'react';
 import {
@@ -24,13 +32,33 @@ import styles from '../styles/screens/LoginScreenStyles';
 
 const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/**
+ * LOGIN SKÆRM KOMPONENT
+ * 
+ * Dette er første skridt når brugeren åbner appen uden at være logget ind.
+ * Her logger de ind med email og adgangskode.
+ * 
+ * Flowet:
+ * 1. Brugeren skriver email og adgangskode
+ * 2. Vi validerer at begge felter er udfyldt
+ * 3. Vi sender det til Firebase Auth
+ * 4. Hvis det virker: Brugeren er nu logget ind, appen går videre
+ * 5. Hvis det fejler: Vi viser en fejlbesked
+ */
 const LoginScreen = ({ navigation }) => {
+  // Formularstate og fejlhåndtering for login.
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [fieldErrors, setFieldErrors] = useState({});
   const [authError, setAuthError] = useState('');
   const [loading, setLoading] = useState(false);
 
+  /**
+   * RYDNING AF FEJLBESKEDER
+   * 
+   * Når brugeren begynder at skrive i et felt, skal gamle fejlbeskeder
+   * for det felt forsvinde (da de nu skriver et nyt svar).
+   */
   const clearFieldError = (field) => {
     setFieldErrors((prev) => {
       if (!prev[field]) {
@@ -58,8 +86,8 @@ const LoginScreen = ({ navigation }) => {
     clearAuthError();
   };
 
+  // Sikrer at brugerens input er gyldigt før login-forsøg.
   const validate = () => {
-    // Sikrer at brugerens input er gyldigt før login-forsøg.
     const nextErrors = {};
 
     if (!email.trim()) {
@@ -78,6 +106,12 @@ const LoginScreen = ({ navigation }) => {
     return Object.keys(nextErrors).length === 0;
   };
 
+  /**
+   * NULSTILLING AF SESSION
+   * 
+   * Hvis login fejler, skal brugeren logges ud først før de kan prøve igen.
+   * Dette sikrer en "clean slate" til næste login-forsøg.
+   */
   const resetAuthSession = async () => {
     if (!auth.currentUser) {
       return;

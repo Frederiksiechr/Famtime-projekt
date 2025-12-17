@@ -1,8 +1,18 @@
-/**
+﻿/**
  * LandingScreen
  *
- * - Beskyttet skærm der vises efter login og samler brugerinformation.
- * - Formularen gemmer profiloplysninger i Firestore.
+ * Hvad goer filen for appen:
+ * - Er brugerens "profil-setup" efter login: her udfylder man profil (navn, alder, koen, by, avatar) og familie-præferencer.
+ * - Gemmer oplysningerne i Firestore og viser/udleverer familie-id, så man kan invitere andre til samme familie.
+ * - Danner grundlag for resten af appen: præferencerne bruges senere til at beregne ledige tider og foreslaa aktiviteter.
+ *
+ * Overblik (hvordan filen er bygget op):
+ * - Konfiguration/konstanter: ugedage, tidsvindue-presets, default tider og helpers til slot-ids.
+ * - Helpers: bygger/normaliserer tids-slots, validerer tid (HH:MM), og formaterer UI-tekst.
+ * - State: profilfelter + fejl/loader, dag->tidsvinduer (slots), valg af by/avatar, og UI-state for timepicker.
+ * - Dataflow: henter eksisterende profil fra Firestore (edit-mode), og gemmer opdateret profil tilbage ved "Gem".
+ * - Handlinger: ændring af dage/slots, åbne/lukke timepicker, kopiere familie-id, og `handleSaveProfile` der validerer og skriver til Firestore.
+ * - UI: scroll-view med sektioner for profilfelter, avatar/by, familieinfo, og en editor for daglige tidsvinduer.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -47,6 +57,14 @@ const WEEK_DAYS = [
 
 const TIME_PATTERN = /^([01]\d|2[0-3]):([0-5]\d)$/;
 
+/**
+ * TIDSVINDUE PRESETS
+ * 
+ * Nogle brugere kan have svært ved selv at sætte tider.
+ * Her er nogle faste forslag: Morgen (06:00-09:00), Formiddag osv.
+ * 
+ * Brugeren kan enten vælge et preset eller selv skrive tider.
+ */
 const TIME_WINDOW_PRESETS = [
   {
     key: 'none',
@@ -474,6 +492,9 @@ const hydrateDayTimeSelections = (
 
 const LandingScreen = ({ navigation, route }) => {
   const isEditMode = route?.params?.mode === 'edit';
+  // Overblik: indlaeser/gemmer profiloplysninger og viser familieinvitation til brugeren.
+  // State-grupper: profilfelter (navn/age/gender/emoji), tidspræferencer (dage/vinduer),
+  // familie-id/kopi-feedback, samt UI-tilstande for loaders/validering/pickers.
   const [generalError, setGeneralError] = useState('');
   const [loadingProfile, setLoadingProfile] = useState(true);
   const [savingProfile, setSavingProfile] = useState(false);
@@ -1339,6 +1360,7 @@ const LandingScreen = ({ navigation, route }) => {
     });
   }, []);
 
+  // Validerer alle profilfelter inkl. tidsvinduer/dage før gem.
   const validateProfile = () => {
     const nextErrors = {};
     const trimmedName = profile.name.trim();
@@ -1463,6 +1485,7 @@ const LandingScreen = ({ navigation, route }) => {
     return Object.keys(nextErrors).length === 0;
   };
 
+  // Gemmer brugerprofilen i Firestore efter simpel validering af felter.
   const handleSaveProfile = async () => {
     if (!userId) {
       setGeneralError('Ingen bruger fundet. Prøv at logge ind igen.');

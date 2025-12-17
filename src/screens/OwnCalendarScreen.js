@@ -1,9 +1,18 @@
-/**
+﻿/**
  * OwnCalendarScreen
  *
- * - Viser familiens begivenheder opdelt på godkendelsesstatus.
- * - Lader brugeren godkende eller afvise forslag samt foreslå nye ændringer.
- * - Alt data hentes fra Firestore - ingen direkte manipulation af Apple-kalenderen her.
+ * Hvad goer filen for appen:
+ * - Viser brugerens overblik over familie-begivenheder og deres status (afventer, godkendt, ideer).
+ * - Samler alles busy tider + familiens praef erencer for at finde ledige tidspunkter og foreslaa aktiviteter.
+ * - Lader brugeren godkende/afvise, foreslaa aendringer og oprette nye forslag til familien.
+ *
+ * Overblik (hvordan filen er bygget op):
+ * - Konstanter/sektion-varianter: UI-farver og tidskonstanter for forslag og varigheder.
+ * - Helpers: formattering af tid/dato og små konverteringer (fx Firestore timestamp -> Date).
+ * - State: familie/events, proposal-modal, auto-suggestions, praef erencer/busy-data og UI-tilstande.
+ * - Dataflow: live-lytning på Firestore (familie, events, praef erencer) + device-kalender busy tider (polling/appstate).
+ * - Logik: bruger `findMutualAvailability` til at bygge ledige slots og en suggestions-kø, inkl. sponsor-indslag.
+ * - UI: statuskort, autosuggestions, sektioner pr. status og modaler til forslag/detaljer.
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
@@ -192,6 +201,7 @@ const formatDateRange = (start, end) => {
 };
 
 const OwnCalendarScreen = () => {
+  // --- Grunddata: hvem er brugeren, og basisstatus for skærmen ---
   const currentUser = auth.currentUser;
   const currentUserId = currentUser?.uid ?? null;
   const currentUserEmail = currentUser?.email?.toLowerCase() ?? '';
@@ -202,6 +212,7 @@ const OwnCalendarScreen = () => {
   const [statusMessage, setStatusMessage] = useState('');
   const [infoMessage, setInfoMessage] = useState('');
 
+  // --- Familie- og medlemsdata + præferencer der driver forslag/visning ---
   const [familyId, setFamilyId] = useState(null);
   const [familyName, setFamilyName] = useState('');
   const [familyMembers, setFamilyMembers] = useState([]);
@@ -258,6 +269,7 @@ const OwnCalendarScreen = () => {
   const isAdminUser = normalizedUserRole === 'admin' || normalizedUserRole === 'owner';
   const [events, setEvents] = useState([]);
 
+  // --- Forslagsmodal og UI-tilstande til oprettelse/visning af events ---
   const [proposalVisible, setProposalVisible] = useState(false);
   const [proposalEvent, setProposalEvent] = useState(null);
   const [proposalData, setProposalData] = useState({
@@ -292,6 +304,8 @@ const OwnCalendarScreen = () => {
   const [suggestionLoading, setSuggestionLoading] = useState(true);
   const { remoteActivities, manualActivities } = useActivityPool();
   const [previewSuggestion, setPreviewSuggestion] = useState(null);
+
+  // --- UI helpers ---
   const toggleSectionCollapse = useCallback((key) => {
     if (!key) {
       return;
@@ -302,6 +316,7 @@ const OwnCalendarScreen = () => {
     }));
   }, []);
 
+  // Når appen vender tilbage til forgrunden, opdateres device-busy tider, så forslag er friske.
   useEffect(() => {
     const handleAppStateChange = (nextState) => {
       if (appStateRef.current !== 'active' && nextState === 'active') {
@@ -320,6 +335,7 @@ const OwnCalendarScreen = () => {
     };
   }, []);
 
+  // Simpel polling for at fange nye device-kalenderændringer uden brugerinteraktion.
   useEffect(() => {
     const intervalId = setInterval(() => {
       setDeviceBusyRefreshToken((token) => token + 1);
@@ -340,6 +356,7 @@ const OwnCalendarScreen = () => {
     });
   }, []);
 
+  // Nulstiller formularen for event-forslag, saadan at modal altid starter med friske felter.
   const resetProposalState = useCallback(() => {
     const now = new Date();
     now.setSeconds(0, 0);
@@ -357,6 +374,7 @@ const OwnCalendarScreen = () => {
     setShowProposalEndTimePicker(false);
   }, []);
 
+  // Åbner modal til at foreslå ændringer/ny tid for en given begivenhed (eller helt ny).
   const openProposalModal = useCallback(
     (event) => {
       setProposalEvent(event);
@@ -390,6 +408,7 @@ const OwnCalendarScreen = () => {
     [setProposalVisible]
   );
 
+  // Lukker forslagsmodal og nulstiller feltværdier.
   const closeProposalModal = useCallback(() => {
     setProposalVisible(false);
     setProposalEvent(null);
@@ -409,6 +428,7 @@ const OwnCalendarScreen = () => {
     return today;
   }, [proposalEvent]);
 
+  // Hjælp: true hvis eventen enten er pending eller har en ventende ændring.
   const requiresRenewedApproval = useCallback(
     (event) => event?.status === 'pending' || Boolean(event?.pendingChange),
     []
@@ -462,6 +482,7 @@ const OwnCalendarScreen = () => {
     [events]
   );
 
+  // Samler alle medlemmer + brugerens kalenderoplysninger til availability-beregninger.
   const calendarEntries = useMemo(() => {
     const memberIds = Array.isArray(familyMembers)
       ? familyMembers
@@ -493,6 +514,7 @@ const OwnCalendarScreen = () => {
       return {};
     }
 
+    // Transformer rå familiepræferencer til det format availability-beregneren forventer.
     const normalized = {};
     Object.entries(familyPreferences).forEach(([userId, prefs]) => {
       if (!prefs || typeof prefs !== 'object') {
@@ -542,6 +564,7 @@ const OwnCalendarScreen = () => {
     return mergeBusyIntervals(confirmedBusy, pendingBusy);
   }, [confirmedEventsAll, pendingEventsAll]);
 
+  // Bygger et visningsvenligt forslag ud fra et ledigt tidsrum (kombinerer seed + aktivitetspool).
   const buildSuggestionFromSlot = useCallback(
     (slot) => {
       if (
@@ -680,6 +703,7 @@ const OwnCalendarScreen = () => {
     [buildRajissimoSponsorSuggestion, buildSuggestionFromSlot]
   );
 
+  // Bygger en kø af ledige tidsrum (inkl. sponsor-indsprøjtninger) og viser de første forslag.
   useEffect(() => {
     if (!calendarEntries.length) {
       autoSlotQueueRef.current = [];
@@ -760,6 +784,7 @@ const OwnCalendarScreen = () => {
     }
   }, [autoSuggestions.length, suggestionLoading]);
 
+  // Fjerner et autoslot fra visningen og trækker næste fra køen hvis muligt.
   const handleDismissAutoSuggestion = useCallback(
     (suggestionId) => {
       setAutoSuggestions((prev) =>
@@ -775,6 +800,7 @@ const OwnCalendarScreen = () => {
         return;
       }
 
+      // Opretter et event-forslag ud fra auto-slot og sætter korrekt godkendelsesliste.
       setAutoActionId(suggestion.id);
 
       try {
@@ -872,6 +898,7 @@ const OwnCalendarScreen = () => {
     setPreviewSuggestion(null);
   }, []);
 
+  // Holder udvidede kort i sync: hvis events ændres, fjernes IDs der ikke findes længere.
   useEffect(() => {
     setExpandedEventIds((prev) => {
       if (!prev.size) {
@@ -891,6 +918,7 @@ const OwnCalendarScreen = () => {
     });
   }, [events]);
 
+  // Henter familiemedlemmers profiler/præferencer fra Firestore og samler dem i lokale maps.
   useEffect(() => {
     let isActive = true;
 
@@ -1084,6 +1112,7 @@ const OwnCalendarScreen = () => {
     };
   }, [familyMembers]);
 
+  // Live-lytning på kalenderdata pr. medlem (busy intervaller + præferencer) for opdaterede forslag.
   useEffect(() => {
     const memberIds = Array.isArray(familyMembers)
       ? familyMembers
@@ -1180,6 +1209,7 @@ const OwnCalendarScreen = () => {
   useEffect(() => {
     let cancelled = false;
 
+    // Sikrer adgang til enhedens kalendere og gemmer deres IDs til senere busy-opslag.
     const ensureCalendarSource = async () => {
       if (!currentUserId) {
         if (!cancelled) {
@@ -1250,6 +1280,7 @@ const OwnCalendarScreen = () => {
     };
   }, [currentUserId]);
 
+  // Henter busy tider fra device-kalendere når kilde/refresh-token ændres; danner grundlag for forslag.
   useEffect(() => {
     if (
       !currentUserId ||
@@ -1350,6 +1381,7 @@ const OwnCalendarScreen = () => {
     deviceCalendarSource.ready,
   ]);
 
+  // Lytter på bruger- og familie-docs: finder familie-id, navn, medlemmer og holder events opdateret.
   const loadProfileAndFamily = useCallback(() => {
     if (!currentUserId) {
       setLoading(false);
@@ -1454,6 +1486,7 @@ const OwnCalendarScreen = () => {
     };
   }, [loadProfileAndFamily]);
 
+  // Live-lytning på familie-events (Firestore) for at holde skærmen opdateret.
   useEffect(() => {
     if (!familyId) {
       setEvents([]);
@@ -1523,6 +1556,7 @@ const OwnCalendarScreen = () => {
     setTimeout(() => setRefreshing(false), 600);
   }, []);
 
+  // Bruges når vi skal vide, hvem der hører til familien (fra state og evt. frisk doc-læsning).
   const computeMemberIds = useCallback(async () => {
     const idsFromState = familyMembers
       .map((member) => member?.userId)
@@ -1553,6 +1587,7 @@ const OwnCalendarScreen = () => {
         return;
       }
 
+      // Markerer event som godkendt af den aktuelle bruger og afslutter hvis alle har godkendt.
       const pendingList = Array.isArray(event.pendingApprovals)
         ? event.pendingApprovals
         : [];
@@ -1642,6 +1677,7 @@ const OwnCalendarScreen = () => {
         return;
       }
 
+      // Afviser en foreslået ændring og nulstiller pending/approval felter.
       try {
         await db
           .collection('families')
@@ -1672,6 +1708,7 @@ const OwnCalendarScreen = () => {
         return;
       }
 
+      // Kun for admin/owner: sletter hele begivenheden for alle.
       try {
         await db
           .collection('families')
@@ -1708,6 +1745,7 @@ const OwnCalendarScreen = () => {
     [handleAdminCancelEvent]
   );
 
+  // Opdaterer datoen i forslagsformularen og justerer sluttid, så den ikke ender før start.
   const handleProposalDateChange = useCallback(
     (event, selectedDate) => {
       if (event?.type === 'dismissed') {
@@ -1756,6 +1794,7 @@ const OwnCalendarScreen = () => {
     []
   );
 
+  // Sætter starttid i formularen og flytter evt. sluttid, så den ligger efter start.
   const handleProposalStartTimeChange = useCallback(
     (event, selectedDate) => {
       if (event?.type === 'dismissed') {
@@ -1794,6 +1833,7 @@ const OwnCalendarScreen = () => {
     []
   );
 
+  // Sætter sluttid i formularen; hvis valgt tid er før start, rykker den til 30 min efter start.
   const handleProposalEndTimeChange = useCallback(
     (event, selectedDate) => {
       if (event?.type === 'dismissed') {
@@ -1840,6 +1880,7 @@ const OwnCalendarScreen = () => {
     }
   }, []);
 
+  // Viser den relevante tid-picker (start eller slut) i modalens UI.
   const handleOpenTimePicker = useCallback((type) => {
     if (type === 'start') {
       setShowProposalEndTimePicker(false);
@@ -1850,6 +1891,7 @@ const OwnCalendarScreen = () => {
     }
   }, []);
 
+  // Sender et forslag til ændring af eksisterende begivenhed (kræver familie + bruger).
   const handleSubmitProposal = useCallback(async () => {
     if (!proposalEvent || !familyId || !currentUserId) {
       return;
@@ -2543,6 +2585,8 @@ const OwnCalendarScreen = () => {
 
   const shouldShowStatusCard = Boolean(error);
 
+  // UI-oversigt: viser overblik, auto-forslag, statuskort og sektioner for afventende/godkendte/idéer
+  // samt modaler til forslag og detaljer.
   return (
     <>
       <SafeAreaView style={styles.safeArea}>

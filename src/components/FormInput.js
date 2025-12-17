@@ -10,6 +10,26 @@
  * @param {import('react-native').StyleProp<import('react-native').ViewStyle>} [props.style] - Ekstra styling til containeren.
  * @param {import('react-native').TextInputProps} restProps - Øvrige TextInput props via rest-spredning.
  */
+
+/**
+ * FORMULAR-INPUT KOMPONENT
+ * 
+ * Denne komponent er et inputfelt til formulareres (som login-skærmen eller
+ * editering af profil). Den er designet til at være fleksibel og konsistent.
+ * 
+ * Komponenten viser:
+ * - Et label/navn for feltet øverst (f.eks. "Email" eller "Adgangskode")
+ * - Et inputfelt hvor brugeren kan skrive
+ * - En eventuel fejlbesked under feltet hvis der er noget galt
+ * 
+ * Komponenten ændrer farver når brugeren fokuserer på feltet (dvs. er ved at
+ * skrive i det), og den viser rød hvis der er en fejl.
+ * 
+ * Forældre-komponenter sender:
+ * - "label": Hvad skal overskriften hedde
+ * - "error": En fejlbesked hvis der er noget galt (valgfrit)
+ * - Samt alle normale TextInput properties som placeholder, value, onChangeText osv.
+ */
 import React, { useState } from 'react';
 import { Text, TextInput, View } from 'react-native';
 

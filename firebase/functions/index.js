@@ -12,6 +12,15 @@ admin.initializeApp();
 
 const REGION = 'europe-west1';
 
+/**
+ * RENSNING AF TEKST
+ * 
+ * Denne lille hjælper-funktion sørger for, at tekster (såsom brugernavne) 
+ * er helt "rene". Den fjerner mellemrum fra start og slut, og hvis der 
+ * kommer noget der ikke er tekst (som tal), returner den bare tomt.
+ * 
+ * Dette beskytter imod problemer hvis brugerne tilføjer data forkert.
+ */
 const sanitizeString = (value) => {
   if (typeof value !== 'string') {
     return '';
@@ -19,6 +28,17 @@ const sanitizeString = (value) => {
   return value.trim();
 };
 
+/**
+ * OVERSÆTNING AF DAGE
+ * 
+ * Denne hjælper oversætter engelske dagnavne (som "Monday") til danske navne
+ * (som "Mandag"). Hvis der kommer en dag-stavelse som programmet ikke kender,
+ * bruges den engelske udgave eller "ukendt dag".
+ * 
+ * Dette er praktisk fordi dage gemmes på engelsk i systemet, men skal vises
+ * på dansk til brugerne.
+ */
+// sætter labels
 const toLabel = (dayKey) => {
   const mapping = {
     monday: 'Mandag',
@@ -42,6 +62,20 @@ const MOOD_PROMPTS = {
   adventurous: 'familien er eventyrlysten og vil gerne prøve noget nyt',
   creative: 'familien er i kreativt humør og ønsker en aktivitet med fordybelse',
 };
+
+/**
+ * OPENAI FORSLAG-FUNKTION
+ * 
+ * Denne funktion tager en familie's data (navn, alder, by, stemning) og et 
+ * aktivitetsforslag, og bruger kunstig intelligens (OpenAI) til at lave det
+ * til et personaliseret forslag, der passer til familiens humør og præferencer.
+ * 
+ * Funktionen sikrer også, at brugerens login er gyldig før den kører, så kun
+ * registrerede brugere kan få forslag.
+ * 
+ * Eksempel: Hvis familien er i eventyrlysten humør, bliver et generisk forslag
+ * gjort mere spændende og aventyrøst.
+ */
 
 exports.openaiSuggestion = functions
   .region(REGION)

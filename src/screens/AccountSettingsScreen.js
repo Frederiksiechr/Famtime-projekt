@@ -1,8 +1,16 @@
-/**
+﻿/**
  * AccountSettingsScreen
  *
- * - Samler brugerens kontoindstillinger, familiestatus og eventuelle invitationer.
- * - Giver mulighed for at acceptere familieinvitationer og se teamet.
+ * Hvad gør filen for appen:
+ * - Viser konto/familie-status, invitationer og medlemshandlinger ét sted.
+ * - Giver knapper til at acceptere invites, forlade/overdrage familie og administrere medlemmer.
+ * - Synker live mod Firestore (users/families) for at holde kort/sektioner opdateret.
+ * Overblik (hvordan filen er bygget op):
+ * - Formatterings-helpers: viser tid/ugedage og opsummerer praef erencer (tidsvinduer/duration) for familien.
+ * - State: profil/familie/invites, praef erencevisning, samt UI-tilstande for fejl/status/handlinger (overdragelse/fjern medlem).
+ * - Dataflow: lytter live paa `users/{uid}` (familyId/rolle) og `families/{id}` (medlemmer/invites), og mapper medlemmers praef erencer.
+ * - Handlinger: accepter invitation, forlad/overdrag familie, fjern medlem eller slet profil; skriver opdateringer til Firestore.
+ * - UI: scroll-view med kontokort, familiesektion (medlemmer/praef erencer), invitationer og knapper til handlingerne.
  */
 import React, { useEffect, useMemo, useState } from 'react';
 import { View, Text, ScrollView, Alert } from 'react-native';
@@ -28,6 +36,11 @@ const WEEK_DAY_LABELS = {
   sunday: 'Søndag',
 };
 
+/**
+ * OMREGN TIDSSTRENG TIL MINUTTER
+ * Tager en streng som "14:30" og returnerer 870 minutter (siden midnat).
+ * Hvis formatet er forkert, returneres null.
+ */
 const timeStringToMinutes = (value) => {
   if (typeof value !== 'string') {
     return null;
@@ -42,6 +55,12 @@ const timeStringToMinutes = (value) => {
   return hours * 60 + minutes;
 };
 
+/**
+ * OMREGN MINUTTER TIL TIDSSTRENG
+ * 
+ * Tager 870 minutter og returnerer "14:30".
+ * Sikrer at værdien er mellem 0 og 1439 minutter (midnat til 23:59).
+ */
 const minutesToTimeString = (minutes) => {
   const clamped = Math.max(0, Math.min(24 * 60 - 1, minutes));
   const hours = String(Math.floor(clamped / 60)).padStart(2, '0');
@@ -49,6 +68,15 @@ const minutesToTimeString = (minutes) => {
   return `${hours}:${mins}`;
 };
 
+/**
+ * SAMLE OVERLAPPENDE TIDSINTERVALLER
+ * 
+ * Hvis man har to intervaller 14:00-15:30 og 15:00-16:00,
+ * bliver de smeltet sammen til 14:00-16:00.
+ * 
+ * Dette bruges til at rydde op i tidsvinduerne så man ikke har
+ * overlappende eller redundante intervaller.
+ */
 const mergeTimeRanges = (entries = []) => {
   const parsed = entries
     .map((entry) => {
@@ -94,6 +122,15 @@ const mergeTimeRanges = (entries = []) => {
   );
 };
 
+/**
+ * FORMATERING AF TIDSVINDUEER
+ * 
+ * Tager tidsvinduerne fra profilen (f.eks. mandag: ["14:00-15:30", "18:00-20:00"])
+ * og laver det til en læsbar tekst som:
+ * "Mandag: 14:00-15:30 & 18:00-20:00"
+ * 
+ * Hvis nogle dage ikke er i "foretrukne dage", vises de ikke.
+ */
 const formatTimeWindows = (timeWindows = {}, preferredDays = []) => {
   if (!timeWindows || typeof timeWindows !== 'object') {
     return 'Ikke udfyldt';
@@ -123,6 +160,16 @@ const formatTimeWindows = (timeWindows = {}, preferredDays = []) => {
   return 'Ikke udfyldt';
 };
 
+/**
+ * FORMATERING AF VARIGHED
+ * 
+ * Viser hvor lang tid en aktivitet skal tage.
+ * 
+ * Eksempler:
+ * - Min: 30, Max: 120 → "30 - 120 min"
+ * - Min: 30, Max: null → "Min. 30 min"
+ * - Min: null, Max: 120 → "Op til 120 min"
+ */
 const formatDurationRange = (min, max) => {
   const minValid = Number.isFinite(min);
   const maxValid = Number.isFinite(max);
@@ -139,6 +186,12 @@ const formatDurationRange = (min, max) => {
   return 'Ikke udfyldt';
 };
 
+/**
+ * FORMATERING AF FORETRUKNE DAGE
+ * 
+ * Tager en liste som ["monday", "friday", "saturday"]
+ * og laver den til "Mandag, Fredag, Lørdag"
+ */
 const formatPreferredDays = (days) => {
   if (!Array.isArray(days) || !days.length) {
     return 'Ikke udfyldt';
@@ -151,6 +204,15 @@ const formatPreferredDays = (days) => {
   return labels.length ? labels.join(', ') : 'Ikke udfyldt';
 };
 
+/**
+ * FIND FØRSTE GYLDIG TEKST
+ * 
+ * Tager flere værdier og returnerer den første der er en ikke-tom streng.
+ * 
+ * Eksempel: pickFirstString(null, "", "Hej", "Verden") returnerer "Hej"
+ * 
+ * Bruges til at finde fallback-værdier hvis nogle felter mangler.
+ */
 const pickFirstString = (...values) => {
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
@@ -165,6 +227,20 @@ const pickFirstString = (...values) => {
   return '';
 };
 
+/**
+ * FORMATERING AF PRÆFERENCE-KILDE
+ * 
+ * Viser hvor medlemmets tid-præferencer kommer fra:
+ * - "Ingen præferencer" = medlemmet har ikke udfyldt sin kalender
+ * - "Følger Jens" = medlemmet bruger Jens' kalender automatisk
+ * - "Tilpasset" = medlemmet har selv udfyldt deres egen kalender
+ * 
+ * Dette bruges til at vise andre medlemmer hvad der styrer denne persons tilgængelighed.
+ * 
+ * Eksempel:
+ * - Mor bruger automatisk Dads kalender → "Følger Dad"
+ * - Datter har sin egen kalender → "Tilpasset"
+ */
 const formatPreferenceSource = (profile, familyMembers = []) => {
   if (!profile) {
     return 'Ukendt';
@@ -191,18 +267,63 @@ const formatPreferenceSource = (profile, familyMembers = []) => {
   return 'Tilpasset';
 };
 
+/**
+ * KONTO-INDSTILLINGER SKÆRM KOMPONENT
+ * 
+ * Denne skærm viser brugeren deres konto-oplysninger og familie-status.
+ * 
+ * Den viser:
+ * - Brugerens profil (navn, by, alder)
+ * - Hvilken familie de tilhører (hvis nogen)
+ * - Familie-medlemmer og deres præferencer
+ * - Invitationer til andre familier
+ * 
+ * Handlinger:
+ * - Acceptere invitation til en ny familie
+ * - Forlade eller overdrage en familie
+ * - Slette en bruger
+ */
 const AccountSettingsScreen = ({ navigation }) => {
+  /**
+   * TILSTANDSVARIABLE (STATE)
+   * 
+   * Disse variabler holder styr på data og status for denne skærm:
+   */
+
+  // Er siden ved at hente data?
   const [loading, setLoading] = useState(true);
+
+  // Hvis noget gik galt (forbindelsesfejl, ingen bruger etc.)
   const [error, setError] = useState('');
+
+  // Besked når noget lykkedes (fx "Du har forladt familjen!")
   const [statusMessage, setStatusMessage] = useState('');
+
+  // Denne brugers oplysninger (navn, by, fødselsdag etc.)
   const [userProfile, setUserProfile] = useState(null);
+
+  // Den familie brugeren tilhører (navn, medlemmer, præferencer)
   const [family, setFamily] = useState(null);
+
+  // Liste over invitationer fra andre familier som denne bruger kan acceptere
   const [invites, setInvites] = useState([]);
+
+  // Fejler når man accepterer/forslår en invitation?
   const [actionError, setActionError] = useState('');
+
+  // Hvilke invitations-ID'er er ved at blive accepteret? (bruges til at vise loading på knappen)
   const [acceptingIds, setAcceptingIds] = useState([]);
+
+  // Er brugeren ved at forlade deres familie?
   const [leavingFamily, setLeavingFamily] = useState(false);
+
+  // Er brugeren ved at slette sin konto?
   const [deletingProfile, setDeletingProfile] = useState(false);
+
+  // Hvilke medlem-ID'er er ved at blive slettet fra familien?
   const [removingMemberIds, setRemovingMemberIds] = useState([]);
+
+  // Gem profilinformation for hvert familie-medlem (navn, by, fødselsdag)
   const [memberProfiles, setMemberProfiles] = useState({});
 
   const currentUser = auth.currentUser;
@@ -442,6 +563,19 @@ const AccountSettingsScreen = ({ navigation }) => {
     };
   }, [family?.members]);
 
+  /**
+   * ACCEPT INVITATION TIL FAMILIE
+   * 
+   * Når brugeren accepterer en invitation til en anden familie:
+   * - Vi tilføjer brugeren som medlem af familien
+   * - Vi fjerner brugerens email fra listen over ventende invitationer
+   * - Vi gemmer familie-ID på brugerens profil
+   * 
+   * Eksempel:
+   * - Bruger får invitation fra "Andersens Familie"
+   * - Bruger trykker "Accepter"
+   * - Bruger kommer nu til at høre til "Andersens Familie" og ser deres medlemmer
+   */
   const handleAcceptInvite = async (familyId) => {
     if (!currentUser) {
       return;
@@ -556,6 +690,15 @@ const AccountSettingsScreen = ({ navigation }) => {
     navigation.navigate('FamilySetup');
   };
 
+  /**
+   * BESTEM ROLLE-ETIKET
+   * 
+   * Konverterer en rolle fra databasen til et læseligt navn:
+   * - "owner" eller "admin" → "Administrator"
+   * - Alt andet → "Medlem"
+   * 
+   * Dette bruges til at vise medlemmernes roller på skærmen.
+   */
   const determineRoleLabel = (role) => {
     if (typeof role !== 'string') {
       return 'Medlem';
@@ -567,6 +710,15 @@ const AccountSettingsScreen = ({ navigation }) => {
     return 'Medlem';
   };
 
+  /**
+   * KAN NUVÆRENDE BRUGER ADMINISTRERE FAMILIEN?
+   * 
+   * Tjekker om den nuværende bruger har tilladelse til at:
+   * - Tilføje/fjerne medlemmer
+   * - Ændre familie-indstillinger
+   * 
+   * Dette kræver at brugeren er administrator og også familie-ejeren.
+   */
   const canCurrentUserManageFamily = () => {
     const currentRole = determineRoleLabel(userProfile?.familyRole);
     if (currentRole !== 'Administrator') {
@@ -586,6 +738,14 @@ const AccountSettingsScreen = ({ navigation }) => {
     handleLeaveFamily(member);
   };
 
+  /**
+   * BEKRÆFT FORLAD FAMILIE
+   * 
+   * Viser en dialog hvor brugeren kan bekræfte at de vil forlade familien.
+   * 
+   * Hvis brugeren er administrator, skal de først vælge hvem der skal blive
+   * den nye administrator før de kan forlade.
+   */
   const confirmLeaveFamily = () => {
     if (!family?.id || !currentUser) {
       return;
@@ -624,6 +784,19 @@ const AccountSettingsScreen = ({ navigation }) => {
     );
   };
 
+  /**
+   * FORLAD FAMILIE
+   * 
+   * Når brugeren vil forlade sin nuværende familie:
+   * - Vi fjerner brugeren fra familie-medlemslist
+   * - Hvis brugeren er ejeren, skal de først overdrage familien til en anden
+   * - Vi fjerner familie-ID fra brugerens profil
+   * 
+   * Eksempel:
+   * - Bruger vælger "Forlad familie"
+   * - Hvis de er administrator, må de først vælge hvem der skal blive administrator
+   * - Brugeren er nu ikke længere medlem af familien
+   */
   const handleLeaveFamily = async (nextOwnerMember = null) => {
     if (!family?.id || !currentUser) {
       return false;
@@ -721,6 +894,19 @@ const AccountSettingsScreen = ({ navigation }) => {
     }
   };
 
+  /**
+   * FJERN FAMILIEMEDLEM
+   * 
+   * Når en administrator fjerner et medlem fra familien:
+   * - Vi fjerner medlemmet fra familie-medlemslisten
+   * - Hvis medlemmet var administrator, gives rollen til det næste medlem
+   * - Vi fjerner deres email fra invitations-list
+   * 
+   * Eksempel:
+   * - Familie-administrator trykker "Fjern" på et medlem
+   * - Medlemmet forsvinder fra familien
+   * - De får deres medlemskab annulleret fra deres side
+   */
   const handleRemoveMember = async (member) => {
     if (!family?.id || !member?.userId) {
       return;
@@ -850,6 +1036,22 @@ const AccountSettingsScreen = ({ navigation }) => {
     promptDeleteApproval();
   };
 
+  /**
+   * SLET BRUGERPROFIL
+   * 
+   * Dette sletter brugerens hele konto fra systemet:
+   * - Først forlade sin familie (eller overdrage ejerskab)
+   * - Slet alle bruger-data fra databasen
+   * - Slet brugerens kalenderdata
+   * - Slet brugerkontoen fra Firebase Auth
+   * 
+   * Denne operation er permanent og kan ikke fortrydes!
+   * 
+   * Eksempel:
+   * - Bruger trykker "Slet konto"
+   * - Alle deres data fjernes fra appens database
+   * - De kan ikke længere logge ind
+   */
   const handleDeleteProfile = async (nextOwnerMember = null) => {
     if (!currentUser) {
       setActionError('Ingen aktiv bruger fundet. Log ind igen.');
@@ -932,6 +1134,12 @@ const AccountSettingsScreen = ({ navigation }) => {
     }
   };
 
+  /**
+   * LOG UD
+   * 
+   * Logger brugeren ud fra Firebase Authentication.
+   * Efter dette vil brugeren blive sendt tilbage til login-skærmen.
+   */
   const handleLogout = async () => {
     try {
       await auth.signOut();

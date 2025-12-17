@@ -1,3 +1,17 @@
+/**
+ * PAKKE-KONFIGURATION FOR CLOUD FUNKTIONER
+ * 
+ * Denne fil fortæller Node.js (serverprogrammet) hvad project hedder, hvilken
+ * version det har, og hvilke "værktøjer" det skal bruge.
+ * 
+ * "dependencies" er de vigtigste værktøjer som programmet SKAL have for at
+ * virke - f.eks. Firebase til databasen, og Axios til at snakke med OpenAI.
+ * 
+ * "devDependencies" er værktøjer som kun bruges når man udvikler/tester,
+ * ikke når programmet kører i virkeligheden.
+ * 
+ * "engines" fortæller at programmet skal køre på Node.js version 18.
+ */
 {
   "name": "famtime-functions",
   "version": "1.0.0",

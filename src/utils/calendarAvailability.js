@@ -1,25 +1,31 @@
-import { availabilityUtils } from '../lib/availability';
+﻿import { availabilityUtils } from '../lib/availability';
 
 /**
  * Shared helpers for availability/busy calculations across screens.
+ *
+ * Laeseguide:
+ * - Indeholder faelles helpers til busy-intervaller og praef erencer for kalenderskærme.
+ * - Bruges af FamilyEventsScreen og OwnCalendarScreen.
  */
+
+const normalizeInterval = (startValue, endValue) => {
+  const start = availabilityUtils.toDate(startValue);
+  const end = availabilityUtils.toDate(endValue);
+  if (!start || !end || end <= start) {
+    return null;
+  }
+  return {
+    start: new Date(start.getTime()),
+    end: new Date(end.getTime()),
+  };
+};
 
 export const mergeBusyIntervals = (primary = [], secondary = []) => {
   const source = [
     ...(Array.isArray(primary) ? primary : []),
     ...(Array.isArray(secondary) ? secondary : []),
   ]
-    .map((interval) => {
-      const start = availabilityUtils.toDate(interval?.start);
-      const end = availabilityUtils.toDate(interval?.end);
-      if (!start || !end || end <= start) {
-        return null;
-      }
-      return {
-        start: new Date(start.getTime()),
-        end: new Date(end.getTime()),
-      };
-    })
+    .map((interval) => normalizeInterval(interval?.start, interval?.end))
     .filter((interval) => Boolean(interval))
     .sort((a, b) => a.start.getTime() - b.start.getTime());
 
@@ -60,15 +66,10 @@ export const buildEventBusyIntervals = (events = []) => {
 
   const intervals = [];
   const appendInterval = (startValue, endValue) => {
-    const start = availabilityUtils.toDate(startValue);
-    const end = availabilityUtils.toDate(endValue);
-    if (!start || !end || end <= start) {
-      return;
+    const interval = normalizeInterval(startValue, endValue);
+    if (interval) {
+      intervals.push(interval);
     }
-    intervals.push({
-      start: new Date(start.getTime()),
-      end: new Date(end.getTime()),
-    });
   };
 
   events.forEach((event) => {
@@ -87,17 +88,12 @@ export const normalizeBusyPayload = (input) => {
   }
 
   return input
-    .map((item) => {
-      const start = availabilityUtils.toDate(item?.start ?? item?.from ?? item?.begin);
-      const end = availabilityUtils.toDate(item?.end ?? item?.to ?? item?.finish);
-      if (!start || !end || end <= start) {
-        return null;
-      }
-      return {
-        start: new Date(start.getTime()),
-        end: new Date(end.getTime()),
-      };
-    })
+    .map((item) =>
+      normalizeInterval(
+        item?.start ?? item?.from ?? item?.begin,
+        item?.end ?? item?.to ?? item?.finish
+      )
+    )
     .filter((interval) => Boolean(interval));
 };
 

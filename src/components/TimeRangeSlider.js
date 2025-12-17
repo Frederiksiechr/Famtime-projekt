@@ -2,6 +2,27 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { View, Text, PanResponder, StyleSheet } from 'react-native';
 import { colors, spacing, fontSizes, radius } from '../styles/theme';
 
+/**
+ * TID-RÆKKEVIDDE SLIDER
+ * 
+ * Denne komponent er en "slider" som lader brugerne vælge en tidsperiode på en dag.
+ * For eksempel kan de vælge at de vil lave aktiviteter mellem klokken 17:00 og 19:00.
+ * 
+ * Komponenten viser:
+ * - To håndtag man kan trække på (start-tid og slut-tid)
+ * - Klokkeslæt der viser hvad man har valgt (f.eks. "17:00" og "19:00")
+ * - En linje med en farvet stripe viser det valgte tidsvindue
+ * 
+ * Komponenten sikrer at:
+ * - Start-tid er altid før slut-tid
+ * - Man kan ikke vælge mindre end 45 minutters forskel
+ * - Værdierne altid stilles ind i 15-minutters trin
+ * 
+ * Forældre-komponenter sender:
+ * - "startTime": Når skal dagslisten starte (f.eks. "17:00")
+ * - "endTime": Når skal dagslisten slutte (f.eks. "19:00")
+ * - "onChange": En funktion som bliver kaldt når brugeren ændrer
+ */
 const MINUTES_IN_DAY = 24 * 60;
 const STEP_MINUTES = 15;
 const MIN_RANGE_MINUTES = 45;
