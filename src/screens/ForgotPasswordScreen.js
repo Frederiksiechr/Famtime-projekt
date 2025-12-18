@@ -35,7 +35,10 @@ const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
  * Hvis brugeren har glemt sin adgangskode, kan de få sendt en reset-email
  * ved at skrive deres email her.
  * 
- * Firebase sender så en email med et link hvor de kan sætte en ny adgangskode.
+ * Flow:
+ * - Validerer email-input og viser feltfejl hvis format mangler.
+ * - Sender reset-link via Firebase Auth og viser klar succes-tekst.
+ * - Oversætter auth-fejl til brugervenlig besked og nulstiller success state.
  */
 const ForgotPasswordScreen = () => {
   // Formularstate + feedback-tekster.
@@ -48,11 +51,10 @@ const ForgotPasswordScreen = () => {
   /**
    * SEND RESET EMAIL
    * 
-   * Denne funktion:
-   * 1. Validerer at email-feltet er udfyldt og ser ud som email
-   * 2. Sender reset-mail via Firebase
-   * 3. Viser succes-besked hvis det virker
-   * 4. Viser fejl-besked hvis det ikke virker
+   * Validerer email, sender reset-mail via Firebase og viser feedback:
+   * - Feltvalidering: tom/ugyldig email giver feltfejl.
+   * - Success: viser grønt kort med instruktionstekst.
+   * - Fejl: logger teknisk fejl og oversætter til venlig besked.
    */
   const handleReset = async () => {
     // Sender reset-mail via Firebase og håndterer validering/feedback.

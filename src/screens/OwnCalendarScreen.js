@@ -306,6 +306,12 @@ const OwnCalendarScreen = () => {
   const [previewSuggestion, setPreviewSuggestion] = useState(null);
 
   // --- UI helpers ---
+
+  /**
+   * TOGGLE SEKTIONS-KOLLAPS
+   * 
+   * Slår en sektion til/fra i UI (bruges til forslag/ventende/godkendte lister).
+   */
   const toggleSectionCollapse = useCallback((key) => {
     if (!key) {
       return;
@@ -356,7 +362,12 @@ const OwnCalendarScreen = () => {
     });
   }, []);
 
-  // Nulstiller formularen for event-forslag, saadan at modal altid starter med friske felter.
+  /**
+   * NULSTIL FORSLAGSFORMULAR
+   * 
+   * Rydder modal-data (titel/beskrivelse/tider), resetter pickers og
+   * sikrer at nye forslag starter med aktuelle default-værdier.
+   */
   const resetProposalState = useCallback(() => {
     const now = new Date();
     now.setSeconds(0, 0);
@@ -374,7 +385,12 @@ const OwnCalendarScreen = () => {
     setShowProposalEndTimePicker(false);
   }, []);
 
-  // Åbner modal til at foreslå ændringer/ny tid for en given begivenhed (eller helt ny).
+  /**
+   * ÅBN FORSLAGSMODAL
+   * 
+   * Forudfylder modal med eksisterende event/ændring, resetter fejl/loading
+   * og viser modal klar til redigering.
+   */
   const openProposalModal = useCallback(
     (event) => {
       setProposalEvent(event);
@@ -408,7 +424,11 @@ const OwnCalendarScreen = () => {
     [setProposalVisible]
   );
 
-  // Lukker forslagsmodal og nulstiller feltværdier.
+  /**
+   * LUK FORSLAGSMODAL
+   * 
+   * Skjuler modal og nulstiller formularen.
+   */
   const closeProposalModal = useCallback(() => {
     setProposalVisible(false);
     setProposalEvent(null);
@@ -428,7 +448,12 @@ const OwnCalendarScreen = () => {
     return today;
   }, [proposalEvent]);
 
-  // Hjælp: true hvis eventen enten er pending eller har en ventende ændring.
+  /**
+   * KRÆVER NY GODKENDELSE
+   * 
+   * Returnerer true hvis en begivenhed er pending eller har pendingChange,
+   * bruges til at gruppere events i UI.
+   */
   const requiresRenewedApproval = useCallback(
     (event) => event?.status === 'pending' || Boolean(event?.pendingChange),
     []
@@ -666,6 +691,12 @@ const OwnCalendarScreen = () => {
     };
   }, []);
 
+  /**
+   * FYLD SYNLIGE FORSLAG
+   * 
+   * Trækker fra køen af ledige slots (med sponsor-indsprøjtning) og fylder
+   * listen op til det ønskede antal uden duplikater.
+   */
   const fillVisibleSuggestions = useCallback(
     (baseList = []) => {
       const base = Array.isArray(baseList) ? baseList.filter(Boolean) : [];
@@ -776,6 +807,11 @@ const OwnCalendarScreen = () => {
     setAutoSuggestions((prev) => fillVisibleSuggestions(prev.slice(0, AUTO_SUGGESTION_VISIBLE)));
   }, [fillVisibleSuggestions, manualActivities, remoteActivities]);
 
+  /**
+   * AUTO SUGGESTION NOTICE
+   *
+   * Viser besked når autoslot-køen er tom og der ikke længere indlæses forslag.
+   */
   useEffect(() => {
     if (!autoSuggestions.length && !suggestionLoading) {
       if (autoSlotCursorRef.current >= autoSlotQueueRef.current.length) {
@@ -784,7 +820,11 @@ const OwnCalendarScreen = () => {
     }
   }, [autoSuggestions.length, suggestionLoading]);
 
-  // Fjerner et autoslot fra visningen og trækker næste fra køen hvis muligt.
+  /**
+   * AFVIS AUTO-SUGGESTION
+   *
+   * Fjerner et autoslot fra visningen og trækker næste forslag fra køen hvis muligt.
+   */
   const handleDismissAutoSuggestion = useCallback(
     (suggestionId) => {
       setAutoSuggestions((prev) =>
@@ -794,6 +834,11 @@ const OwnCalendarScreen = () => {
     [fillVisibleSuggestions]
   );
 
+  /**
+   * ACCEPTER AUTO-SUGGESTION
+   *
+   * Omdanner autoslot til event-forslag med korrekt godkendelsesliste og metadata.
+   */
   const handleAcceptAutoSuggestion = useCallback(
     async (suggestion) => {
       if (!suggestion || !familyId || !currentUserId) {
@@ -887,19 +932,36 @@ const OwnCalendarScreen = () => {
     ]
   );
 
+  /**
+   * ÅBEN SUGGESTION PREVIEW
+   *
+   * Åbner modal til at vise detaljer for et autoslot inden accept.
+   */
   const handleOpenSuggestionPreview = useCallback((suggestion) => {
+
     if (!suggestion) {
       return;
     }
     setPreviewSuggestion(suggestion);
   }, []);
 
+  /**
+   * LUSK SUGGESTION PREVIEW
+   *
+   * Lukker preview-modal for autoslot.
+   */
   const handleCloseSuggestionPreview = useCallback(() => {
+
     setPreviewSuggestion(null);
   }, []);
 
-  // Holder udvidede kort i sync: hvis events ændres, fjernes IDs der ikke findes længere.
+  /**
+   * EXPANDED EVENT IDS SYNC
+   *
+   * Holder udvidede kort i sync: hvis events ændres, fjernes IDs der ikke findes længere.
+   */
   useEffect(() => {
+
     setExpandedEventIds((prev) => {
       if (!prev.size) {
         return prev;

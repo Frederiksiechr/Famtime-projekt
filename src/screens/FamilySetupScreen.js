@@ -261,6 +261,13 @@ const FamilySetupScreen = ({ navigation }) => {
     setStatusMessage('');
   }, [mode]);
 
+  /**
+   * OPRET NY FAMILIE
+   * 
+   * Opretter et nyt familie-dokument, knytter nuværende bruger som admin,
+   * og gemmer kodevarianter så andre kan finde familien via flere stavemåder.
+   * Viser status/fejl undervejs og rydder formular efter succes.
+   */
   const handleCreateFamily = async () => {
     // Opretter en ny familie i Firestore og knytter inviterede medlemmer.
     if (!userId) {
@@ -327,6 +334,13 @@ const FamilySetupScreen = ({ navigation }) => {
     }
   };
 
+  /**
+   * TILSLUT EKSISTERENDE FAMILIE
+   * 
+   * Finder en familie ud fra indtastet kode (inkl. normaliserede varianter),
+   * håndterer cases for allerede medlem/anmodet, og opretter join-request
+   * der gemmes på familie-dokumentet.
+   */
   const handleJoinFamily = async () => {
     // Tilslutter den indtastede familie, hvis koden findes og brugeren ikke allerede er medlem.
     if (!userId) {
@@ -531,6 +545,13 @@ const FamilySetupScreen = ({ navigation }) => {
         {
           text: 'Ja',
           style: 'destructive',
+
+    /**
+     * HÅNDTER MEDLEMS-AKTIONER
+     * 
+     * Viser handlingsmenu for et medlem (gør til admin eller fjern), kun når
+     * nuværende bruger er ejer. Beskytter mod at trykke mens handling er i gang.
+     */
           onPress: handleDeleteFamily,
         },
       ]
@@ -605,6 +626,13 @@ const FamilySetupScreen = ({ navigation }) => {
     Alert.alert(label, 'Vælg handling', actions);
   };
 
+
+  /**
+   * BEKRÆFT OVERDRAGELSE
+   * 
+   * Viser en advarsel før administratorrollen overdrages til et andet medlem.
+   * Sikrer at ejer ikke kan vælge sig selv og at data findes.
+   */
   const confirmTransferOwnership = (member) => {
     if (
       !existingFamily?.id ||
@@ -631,6 +659,14 @@ const FamilySetupScreen = ({ navigation }) => {
     );
   };
 
+
+  /**
+   * OVERDRAG ADMINISTRATORROLLEN
+   * 
+   * Bytter roller mellem ejer og valgt medlem, opdaterer family- og user-docs,
+   * og viser status/fejl undervejs. Afbryder hvis data er forældet eller medlem
+   * ikke længere findes i listen.
+   */
   const handleTransferOwnership = async (member) => {
     if (
       !existingFamily?.id ||
@@ -735,6 +771,14 @@ const FamilySetupScreen = ({ navigation }) => {
     }
   };
 
+
+  /**
+   * FJERN MEDLEM
+   * 
+   * Fjerner et medlem fra familien, rydder deres `familyId`/`familyRole`
+   * og nulstiller deres kalender-reference. Opdaterer også pendingInvites
+   * så deres e-mail ikke længere afventer.
+   */
   const handleRemoveMember = async (member) => {
     if (
       !existingFamily?.id ||
@@ -821,6 +865,14 @@ const FamilySetupScreen = ({ navigation }) => {
     }
   };
 
+
+  /**
+   * GODKEND ANMODNING
+   * 
+   * Flytter en join-request til `members`, fjerner eventuelle pending invites
+   * for samme e-mail og opdaterer brugerens `familyId`/rolle. Viser status/fejl
+   * og låser knap mens handlingen kører.
+   */
   const handleApproveRequest = async (request) => {
     if (
       !existingFamily?.id ||
@@ -924,6 +976,13 @@ const FamilySetupScreen = ({ navigation }) => {
     }
   };
 
+
+  /**
+   * AFVIS ANMODNING
+   * 
+   * Fjerner en join-request fra familien og viser en kort status. Låser knap
+   * mens handlingen kører for at undgå dobbelte kald.
+   */
   const handleRejectRequest = async (request) => {
     if (
       !existingFamily?.id ||
@@ -980,6 +1039,13 @@ const FamilySetupScreen = ({ navigation }) => {
     }
   };
 
+
+  /**
+   * ÅBEN HANDLINGER FOR REQUEST
+   * 
+   * Viser en modal for en join-request hvor ejer kan vælge at godkende eller
+   * afvise, med spærring når en handling allerede er i gang for den bruger.
+   */
   const handleRequestPress = (request) => {
     if (
       !existingFamily?.id ||
@@ -1013,6 +1079,13 @@ const FamilySetupScreen = ({ navigation }) => {
   };
 
 
+  /**
+   * SLET HELE FAMILIEN
+   * 
+   * Fjerner familie-dokumentet, rydder `familyId`/roller for alle medlemmer
+   * samt deres kalenderreferencer. Resetter lokal state så brugeren kan starte
+   * forfra med at oprette/tilslutte en familie.
+   */
   const handleDeleteFamily = async () => {
     if (!existingFamily?.id || existingFamily.ownerId !== userId) {
       setError('Kun familiens ejer kan slette familien.');
@@ -1092,6 +1165,12 @@ const FamilySetupScreen = ({ navigation }) => {
     }
   };
 
+  /**
+   * FORTSÆT TIL APPEN
+   * 
+   * Skipper setupsiden og navigerer brugeren til hovedfanerne når en familie
+   * allerede er sat op.
+   */
   const handleContinueToApp = () => {
     navigation.replace('MainTabs');
   };

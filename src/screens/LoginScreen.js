@@ -86,7 +86,12 @@ const LoginScreen = ({ navigation }) => {
     clearAuthError();
   };
 
-  // Sikrer at brugerens input er gyldigt før login-forsøg.
+  /**
+   * VALIDER LOGIN-FELTER
+   * 
+   * Tjekker e-mailformat og adgangskodens længde, sætter feltfejl og
+   * returnerer true/false afhængigt af om felterne er gyldige.
+   */
   const validate = () => {
     const nextErrors = {};
 
@@ -123,6 +128,12 @@ const LoginScreen = ({ navigation }) => {
     }
   };
 
+  /**
+   * LOG IND
+   * 
+   * Validerer felter, forsøger login via Firebase Auth, nulstiller auth-session
+   * på fejl og viser en brugervenlig fejlbesked.
+   */
   const handleLogin = async () => {
     // Forsøger at logge brugeren ind og oversætter fejl til menneskelig tekst.
     if (!validate()) {

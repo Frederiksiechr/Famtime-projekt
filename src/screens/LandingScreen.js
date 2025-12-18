@@ -8,11 +8,12 @@
  *
  * Overblik (hvordan filen er bygget op):
  * - Konfiguration/konstanter: ugedage, tidsvindue-presets, default tider og helpers til slot-ids.
- * - Helpers: bygger/normaliserer tids-slots, validerer tid (HH:MM), og formaterer UI-tekst.
+* - Helpers: bygger/normaliserer tids-slots, validerer tid (HH:MM), og formaterer UI-tekst.
+* - OPDATER FELT-VÆRDI: Returnerer en onChange-handler til FormInput, der opdaterer profil-state for et givent felt uden ekstra logik.
  * - State: profilfelter + fejl/loader, dag->tidsvinduer (slots), valg af by/avatar, og UI-state for timepicker.
  * - Dataflow: henter eksisterende profil fra Firestore (edit-mode), og gemmer opdateret profil tilbage ved "Gem".
  * - Handlinger: ændring af dage/slots, åbne/lukke timepicker, kopiere familie-id, og `handleSaveProfile` der validerer og skriver til Firestore.
- * - UI: scroll-view med sektioner for profilfelter, avatar/by, familieinfo, og en editor for daglige tidsvinduer.
+* - UI: scroll-view med sektioner for profilfelter, avatar/by, familieinfo, og en editor for daglige tidsvinduer.
  */
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
@@ -39,6 +40,12 @@ import {
 } from '../constants/avatarEmojis';
 import DurationRangeSlider from '../components/DurationRangeSlider';
 import {
+  /**
+   * OPSUMMER DAGENS VALG
+   * 
+   * Bygger en kort tekst til UI baseret på presets eller konkrete slots
+   * (fx "Morgen, Aften" eller "2 tidsrum valgt").
+   */
   FAMILY_PREFERENCE_MODE_OPTIONS,
   FAMILY_PREFERENCE_MODES,
   normalizeFamilyPreferenceMode,
@@ -71,6 +78,12 @@ const TIME_WINDOW_PRESETS = [
     label: 'Ingen',
     start: '',
     end: '',
+  /**
+   * RYD FEJL FOR TIDSVINDUER
+   * 
+   * Fjerner `timeWindows`-fejlen når brugeren retter i slots, så UI
+   * afspejler den nye, potentielt valide tilstand.
+   */
     display: 'Ingen tidsrum',
   },
   {
@@ -82,10 +95,21 @@ const TIME_WINDOW_PRESETS = [
   },
   {
     key: 'forenoon',
+  /**
+   * UDFOLD/DEN UDFOLD DAG
+   * 
+   * Toggler accordion-tilstand for en given dag.
+   */
     label: 'Formiddag',
     start: '09:00',
     end: '12:00',
     display: '09:00-12:00',
+  /**
+   * TIL/FRAKOBL PRESET SLOT
+   * 
+   * Tilføjer eller fjerner et foruddefineret tidsrum for en dag. Resetter
+   * "allday" når andet preset vælges og sikrer timepicker lukkes ved fjernelse.
+   */
   },
   {
     key: 'afternoon',
@@ -141,6 +165,12 @@ const DEFAULT_DAY_PRESET_KEY = 'allday';
 let slotIdCounter = 0;
 const createSlotId = () => {
   slotIdCounter += 1;
+  /**
+   * AKTIVER/DEAKTIVER DAG
+   * 
+   * Når en dag aktiveres tilføjes et standard-slot; når den deaktiveres
+   * ryddes slots og eventuel timepicker lukkes.
+   */
   return `slot-${slotIdCounter}`;
 };
 
@@ -193,6 +223,12 @@ const getPresetOrder = (presetKey) => {
   if (!presetKey) {
     return Infinity;
   }
+  /**
+   * TRYK PÅ DAG-HOVED
+   * 
+   * Åbner dagen hvis den er inaktiv (og aktiverer den), ellers toggler
+   * blot accordion-state.
+   */
   return PRESET_ORDER[presetKey] ?? Infinity;
 };
 
@@ -204,6 +240,12 @@ const sortSlotsByPreset = (slots = []) => {
       return orderA - orderB;
     }
     const startA = typeof slotA.start === 'string' ? slotA.start : '';
+  /**
+   * HÅNDTER VALG I TIDSPICKER
+   * 
+   * Gemmer valgt tid på slottet, skifter til custom-mode og lukker picker
+   * (på Android) eller opdaterer tiden live (iOS).
+   */
     const startB = typeof slotB.start === 'string' ? slotB.start : '';
     return startA.localeCompare(startB);
   });
@@ -1034,6 +1076,12 @@ const LandingScreen = ({ navigation, route }) => {
     [handleToggleDayActive, toggleDayExpansion]
   );
 
+  /**
+   * SKIFT TIL CUSTOM TID
+   * 
+   * Når et slot skal redigeres manuelt, tvinges det i custom-mode med
+   * fornuftige defaultværdier, så timepicker altid har gyldige tider.
+   */
   const handleCustomTimeMode = useCallback(
     (dayKey, slotId) => {
       clearTimeWindowError();
@@ -1068,6 +1116,12 @@ const LandingScreen = ({ navigation, route }) => {
     [clearTimeWindowError]
   );
 
+  /**
+   * ÅBN TIDSPICKER
+   * 
+   * Aktiverer custom-mode for et slot, rydder fejl og viser picker for
+   * start/slut-feltet, med eksisterende tid som udgangspunkt.
+   */
   const openDayTimePicker = useCallback(
     (dayKey, slotId, field) => {
       if (!dayKey || !slotId || !field) {
@@ -1147,6 +1201,12 @@ const LandingScreen = ({ navigation, route }) => {
     [clearTimeWindowError, timePickerState]
   );
 
+  /**
+   * LUK TIDSPICKER
+   * 
+   * Nulstiller picker-state og skjuler UI'et (bruges på iOS-knap og når
+   * dagen deaktiveres).
+   */
   const handleCloseTimePicker = useCallback(() => {
     setTimePickerState({
       dayKey: null,
@@ -1157,6 +1217,11 @@ const LandingScreen = ({ navigation, route }) => {
     });
   }, []);
 
+  /**
+   * VÆLG AVATAR
+   * 
+   * Gemmer valgt emoji i profilstate og rydder fejlen for avatarfeltet.
+   */
   const handleSelectAvatar = (emoji) => {
     if (typeof emoji !== 'string') {
       return;
@@ -1179,6 +1244,12 @@ const LandingScreen = ({ navigation, route }) => {
     });
   };
 
+  /**
+   * KOPIER FAMILIE-ID
+   * 
+   * Forsøger at kopiere brugerens familie-id og viser kort feedback om
+   * handlingen lykkedes.
+   */
   const handleCopyFamilyId = async () => {
     if (!profile.familyId) {
       return;
@@ -1192,6 +1263,11 @@ const LandingScreen = ({ navigation, route }) => {
     setTimeout(() => setCopyFeedback(''), 2500);
   };
 
+  /**
+   * VÆLG KØN
+   * 
+   * Opdaterer køn fra chip-valg og fjerner relateret valideringsfejl.
+   */
   const handleSelectGender = useCallback((value) => {
     if (typeof value !== 'string') {
       return;
@@ -1210,6 +1286,11 @@ const LandingScreen = ({ navigation, route }) => {
     });
   }, []);
 
+  /**
+   * OPDATER ANTAL BØRN
+   * 
+   * Tillader kun tal (0-10), begrænser længde og rydder feltfejl.
+   */
   const handleChildrenCountChange = useCallback((value) => {
     if (typeof value !== 'string') {
       return;
@@ -1240,6 +1321,11 @@ const LandingScreen = ({ navigation, route }) => {
     });
   }, []);
 
+  /**
+   * OPDATER ALDER
+   * 
+   * Fjerner ikke-cifre, begrænser til 3 tegn og rydder feltfejl.
+   */
   const handleAgeChange = useCallback((value) => {
     if (typeof value !== 'string') {
       return;
@@ -1260,6 +1346,11 @@ const LandingScreen = ({ navigation, route }) => {
     });
   }, []);
 
+  /**
+   * VÆLG BY
+   * 
+   * Toggler valgt by (tryk igen for at fravælge) og rydder feltfejl.
+   */
   const handleSelectCity = useCallback((city) => {
     if (typeof city !== 'string') {
       return;
@@ -1278,6 +1369,12 @@ const LandingScreen = ({ navigation, route }) => {
     });
   }, []);
 
+  /**
+   * VÆLG PRÆFERENCE-TILSTAND
+   * 
+   * Skifter mellem Custom/Follow/None, håndterer cases uden followable
+   * medlemmer og rydder relaterede feltfejl.
+   */
   const handleSelectPreferenceMode = useCallback(
     (mode) => {
       const normalizedMode = normalizeFamilyPreferenceMode(mode);
@@ -1326,6 +1423,11 @@ const LandingScreen = ({ navigation, route }) => {
     [canFollowPreference, followableMembers]
   );
 
+  /**
+   * VÆLG HVEM DER FØLGES
+   * 
+   * Sætter hvilket medlem der følges i FOLLOW-mode og rydder preference-fejl.
+   */
   const handleSelectFollowUser = useCallback((memberId) => {
     if (typeof memberId !== 'string' || !memberId.trim().length) {
       return;
@@ -1344,6 +1446,11 @@ const LandingScreen = ({ navigation, route }) => {
     });
   }, []);
 
+  /**
+   * OPDATER VARIGHEDS-SLIDER
+   * 
+   * Gemmer min/max varighed og fjerner varighedsfejlen når brugeren justerer.
+   */
   const handleDurationSliderChange = useCallback((minMinutesValue, maxMinutesValue) => {
     setProfile((prev) => ({
       ...prev,
@@ -1360,7 +1467,12 @@ const LandingScreen = ({ navigation, route }) => {
     });
   }, []);
 
-  // Validerer alle profilfelter inkl. tidsvinduer/dage før gem.
+  /**
+   * VALIDÉR PROFIL
+   * 
+   * Tjekker alle felter inkl. tidsvinduer/dage. Returnerer true/false og
+   * fylder `fieldErrors` med brugervenlige beskeder.
+   */
   const validateProfile = () => {
     const nextErrors = {};
     const trimmedName = profile.name.trim();
@@ -1485,7 +1597,13 @@ const LandingScreen = ({ navigation, route }) => {
     return Object.keys(nextErrors).length === 0;
   };
 
-  // Gemmer brugerprofilen i Firestore efter simpel validering af felter.
+  /**
+   * GEM PROFIL
+   * 
+   * Validerer formularen, normaliserer payload og skriver profil/familie-
+   * felter til Firestore. Opdaterer familie-medlemslisten med avatar/navn,
+   * håndterer follow-mode, tidsvinduer og navigerer videre efter succes.
+   */
   const handleSaveProfile = async () => {
     if (!userId) {
       setGeneralError('Ingen bruger fundet. Prøv at logge ind igen.');

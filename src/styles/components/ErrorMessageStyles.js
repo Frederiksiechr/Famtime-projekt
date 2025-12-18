@@ -1,7 +1,19 @@
+/**
+ * ERROR MESSAGE STYLES
+ *
+ * Styling til fejlbesked-komponenten med visuelt feedback:
+ * - Container med rød baggrund og border
+ * - Rød indikator-prik for visuel markering
+ * - Fejltekst med error-farve
+ */
 import { StyleSheet } from 'react-native';
 import { colors, spacing, fontSizes, radius } from '../theme';
 
 const styles = StyleSheet.create({
+  /**
+   * CONTAINER STYLES
+   * Fejlboks med rød tone, shadow og border for visuel feedback
+   */
   container: {
     flexDirection: 'row',
     alignItems: 'flex-start',
@@ -18,6 +30,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 6 },
     elevation: 2,
   },
+  
+  /**
+   * INDICATOR DOT
+   * Lille rød prik for visuelt at markere at det er en fejlbesked
+   */
   indicator: {
     width: 6,
     height: 6,
@@ -26,6 +43,11 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     marginRight: spacing.sm,
   },
+  
+  /**
+   * ERROR TEXT
+   * Fejltekst med rød farve og letter-spacing
+   */
   text: {
     color: colors.error,
     fontSize: fontSizes.md,

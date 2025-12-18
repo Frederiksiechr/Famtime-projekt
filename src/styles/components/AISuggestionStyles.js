@@ -1,7 +1,21 @@
+/**
+ * AI SUGGESTION STYLES
+ *
+ * Styling til AI-forslags-komponenten, som viser AI-genererede planforslag
+ * og mood-baserede planlægningsforslag. Inkluderer styles for:
+ * - Hovedcontainer og header
+ * - Mood-valg og modal
+ * - Forslagsbox og input
+ * - Inline-layout varianter
+ */
 import { StyleSheet } from 'react-native';
 import { colors, spacing, fontSizes, radius } from '../theme';
 
 const styles = StyleSheet.create({
+  /**
+   * CONTAINER STYLES
+   * Hovedcontainer med shadow og border for visuel fremhævelse
+   */
   container: {
     marginBottom: spacing.lg,
     padding: spacing.lg,
@@ -15,6 +29,11 @@ const styles = StyleSheet.create({
     shadowOffset: { width: 0, height: 12 },
     elevation: 4,
   },
+  
+  /**
+   * HEADER ROW & TEXT
+   * Overskrift og caption-styles for titler og hjælpetekst
+   */
   headerRow: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -36,8 +55,13 @@ const styles = StyleSheet.create({
   moodHelper: {
     fontSize: fontSizes.xs,
     color: colors.mutedText,
-    marginBottom: spacing.md,
+    marginBottom: spacing.xs,
   },
+  
+  /**
+   * MOOD SELECTOR
+   * Styles for mood-valgknap og tilstande (normal, pressed, disabled)
+   */
   moodSelector: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -70,6 +94,11 @@ const styles = StyleSheet.create({
     fontSize: fontSizes.sm,
     color: colors.mutedText,
   },
+  
+  /**
+   * BUTTON & SUGGESTION BOX
+   * Button-styling og suggestions-bokstyle
+   */
   button: {
     alignSelf: 'flex-start',
     paddingHorizontal: spacing.lg,
@@ -94,6 +123,11 @@ const styles = StyleSheet.create({
     color: colors.error,
     fontSize: fontSizes.sm,
   },
+  
+  /**
+   * INLINE LAYOUT STYLES
+   * Kompakt layout for mood-valg og knapper når de skal vises inline
+   */
   inlineContainer: {
     marginTop: spacing.md,
     marginBottom: spacing.md,
@@ -132,6 +166,11 @@ const styles = StyleSheet.create({
     color: colors.error,
     textAlign: 'center',
   },
+  
+  /**
+   * MOOD MODAL STYLES
+   * Modal-backdrop, card og mood-valgmuligheder i modal
+   */
   moodModalBackdrop: {
     flex: 1,
     backgroundColor: 'rgba(75, 46, 18, 0.45)',
@@ -170,6 +209,11 @@ const styles = StyleSheet.create({
     marginTop: spacing.xs,
     marginBottom: spacing.md,
   },
+  
+  /**
+   * MOOD OPTIONS
+   * Individuelle mood-valgmuligheder med aktiv-tilstand og badge
+   */
   moodOption: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,
