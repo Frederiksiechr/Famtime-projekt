@@ -25,6 +25,7 @@ OBS! Da vi har skulle teste projektet på Expo dev build, er følgende process l
 
 ## Hvis noget driller
 - Stop Expo (`Ctrl + C`) og kør `npx expo start --clear` for at rydde cache.
+- Du skal dog bruge `npx expo start --go` for at kunne få en QR-kode der virker til EXPO go grundet vi har implemteret EXPO Dev, som kører som defult. 
 - Tjek at `.env` faktisk ligger i projektmappen og indeholder alle værdierne fra rapporten.
 - Sørg for at telefon og computer er på samme Wi-Fi, hvis du tester på fysisk enhed.
 
