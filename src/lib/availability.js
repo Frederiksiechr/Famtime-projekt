@@ -1,21 +1,21 @@
 ﻿/**
- * Utility helpers for finding mutual availability slots across multiple calendars.
+ * Hjælpefunktioner til at finde fælles ledige tider på tværs af flere kalendere.
  *
- * The algorithm works in five phases:
- * 1. Normalise input â€“ busy ranges, preferences and time windows per user.
- * 2. Derive shared constraints (allowed weekdays, overlapping day windows, slot duration limits).
- * 3. Convert each user's busy list into free intervals within the planning horizon.
- * 4. Intersect all free interval lists to obtain common availability windows.
- * 5. Slice the common windows into concrete suggestion slots that respect min/max duration
- *    and `maxSuggestionDaysPerWeek`.
+ * Algoritmen arbejder i fem faser:
+ * 1. Normaliser input – optagede tidsrum, præferencer og tidsvinduer pr. bruger.
+ * 2. Udled fælles begrænsninger som tilladte ugedage, overlappende dagsvinduer, grænser for varighed. (deriveGroupConstraints)
+ * 3. Konverter hver brugers liste over optaget tid til ledige intervaller inden for planlægningshorisonten. (free) + (invertBusyIntervals)
+ * 4. Find fællesmængden (intersect) af alle lister med ledige intervaller for at opnå fælles tilgængelighedsvinduer. (freeIntervalSets)
+ * 5. Opdel de fælles vinduer i konkrete forslag, slots, der overholder min/max varighed og maxSuggestionDaysPerWeek. (candidateSlots)
+ * 6. Vores regler som buffer (expandIntervalWithBuffer + clampWindowsToQuietHours)
  *
- * All date math happens in UTC by default. If a `timeZone` is supplied we rely on
- * `Intl.DateTimeFormat` to fetch offsets for the target zone, so the environment must support it.
+ * Al datoberegning sker som standard i UTC. Hvis en timeZone angives, benytter vi
+ * Intl.DateTimeFormat til at hente tidsforskelle for den pågældende zone, så miljøet skal understøtte dette.
  *
- * Laeseguide:
- * - Input: busy-intervaller og praef erencer (dage/vinduer, min/max varighed) pr. bruger.
- * - Flow: normaliser input → find frie intervaller → find overlap → skær til konkrete slots.
- * - Output: slots + metadata til forslag i UI.
+ * Læseguide:
+ * - Input: Optaget-intervaller og præferencer (dage/vinduer, min/max varighed) pr. bruger.
+ * - Flow: Normaliser input → find frie intervaller → find overlap → skær til konkrete slots.
+ * - Output: Slots + metadata til forslag i UI.
  */
 
 const MS_PER_MINUTE = 60 * 1000;
@@ -1426,6 +1426,7 @@ export const findMutualAvailability = ({
 } = {}) => {
   // Hovedfunktion: returnerer faelles ledige tidsslots baseret paa busy tider + praef erencer for alle brugere.
   // Trin-overblik: normaliser kalendere -> beregn constraints -> find frie intervaller -> byg dagsvinduer -> generer/filtrer slots.
+  // 
   const planningStart = periodStart instanceof Date && !Number.isNaN(periodStart.getTime())
     ? new Date(periodStart)
     : new Date();
@@ -1506,6 +1507,7 @@ export const findMutualAvailability = ({
   const referenceParts = getZonedParts(planningStart, constraints.timeZone);
 
   // 4) Find frie intervaller pr. bruger (invert busy) og find deres faelles overlap.
+  //  Eksempel A+B: A fri [09-12] [13-17], B fri [10-11] [14-18] ⇒ fælles fri [10-11] [14-17].
   const freeIntervalSets = injectedCalendars.map((calendar) => {
     if (!calendar.busy.length) {
       return [{ start: new Date(planningStart), end: new Date(planningEnd) }];
@@ -1522,7 +1524,7 @@ export const findMutualAvailability = ({
     return { slots: [], constraints };
   }
 
-  // 5) Byg dagsvinduer efter praef erencer/tidszone og faelles frie vinduer.
+  // 5) Byg dagsvinduer efter præferencer/tidszone og fælles frie vinduer.
   const windows = buildDailyWindows({
     planningStart,
     planningEnd,
@@ -1540,6 +1542,8 @@ export const findMutualAvailability = ({
   }
 
   // 6) Generer kandidatslots og filtrer efter regler (same-day, overrun, ugekvote).
+  // Der laves en variable, hvor vi putter resultattet fra generateCandidateSlots ind
+  // August
   const targetSuggestions = Math.max(1, Math.floor(maxSuggestions ?? 1));
   let candidateSlots = generateCandidateSlots(
     eligibleIntervals,
@@ -1552,6 +1556,7 @@ export const findMutualAvailability = ({
     planningStart
   );
 
+  //Regler tilføjes fra tidligere funktioner
   candidateSlots = filterSlotsBySameDayRules(candidateSlots, referenceParts, constraints.timeZone);
 
   candidateSlots = enforceWindowOverrunLimit(candidateSlots, constraints);
